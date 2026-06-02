@@ -1,0 +1,31 @@
+name: Krishna_Mayuri
+description: Krishna Mayuri App
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  webview_flutter: ^4.7.0
+  internet_connection_checker: ^1.0.0+1
+  printing: ^5.12.0
+  pdf: ^3.10.8
+  flutter_pos_printer_platform_image_3_sdt: ^1.2.24
+  esc_pos_utils_plus: ^2.0.3
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/images/logo.webp"
+  min_sdk_android: 21
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
