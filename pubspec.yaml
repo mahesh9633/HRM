@@ -15,6 +15,7 @@ dependencies:
   flutter_pos_printer_platform_image_3_sdt: ^1.2.24
   esc_pos_utils_plus: ^2.0.3
   cupertino_icons: ^1.0.6
+  shared_preferences: ^2.5.3
 
 dev_dependencies:
   flutter_launcher_icons: ^0.13.1

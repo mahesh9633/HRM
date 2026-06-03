@@ -8,11 +8,14 @@ import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../services/nexdine_printer.dart';
+import '../services/session_manager.dart';
 import '../services/usb_printer_manager.dart';
 import 'no_internet_screen.dart';
 
 class WebViewScreen extends StatefulWidget {
-  const WebViewScreen({super.key});
+  final WebViewController? preloadedController;
+  const WebViewScreen({super.key, this.preloadedController});
 
   @override
   State<WebViewScreen> createState() => _WebViewScreenState();
@@ -27,6 +30,11 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
   final UsbPrinterManager _usbPrinter =
   UsbPrinterManager();
+
+  final NexDinePrintSdk _networkPrinter =
+  NexDinePrintSdk();
+
+  NexDinePrinter? _selectedPrinter;
 
   static const String _url =
       'https://krishna-mayuri.myteknoland.com/auth/login';
@@ -54,7 +62,14 @@ class _WebViewScreenState extends State<WebViewScreen> {
   void initState() {
     super.initState();
 
-    _initWebView();
+    debugPrint('WEBVIEW INIT');
+
+    if (widget.preloadedController != null) {
+      _controller = widget.preloadedController;
+      _setupPreloadedController();
+    } else {
+      _initWebView();
+    }
 
     _checkInitialInternet();
 
@@ -65,6 +80,34 @@ class _WebViewScreenState extends State<WebViewScreen> {
     _startAutoReload();
 
     _usbPrinter.connectToFirst();
+
+    _initNetworkPrinter();
+  }
+
+  Future<void> _initNetworkPrinter() async {
+
+    try {
+
+      final printers =
+      await _networkPrinter.discoverPrinters(
+        subnetPrefix: '192.168.1',
+      );
+
+      if (printers.isNotEmpty) {
+
+        _selectedPrinter = printers.first;
+
+        debugPrint(
+          'Network Printer Found: ${_selectedPrinter!.ip}',
+        );
+      }
+
+    } catch (e) {
+
+      debugPrint(
+        'Printer discovery failed: $e',
+      );
+    }
   }
 
   // =====================================================
@@ -118,17 +161,12 @@ class _WebViewScreenState extends State<WebViewScreen> {
             await _checkInitialInternet();
 
           } else {
-
             if (mounted) {
-
               setState(() {
                 _hasInternet = true;
               });
-
-              final currentUrl =
-              await _controller?.currentUrl();
-
-              if (currentUrl != null) {
+              final currentUrl = await _controller?.currentUrl();
+              if (currentUrl != null && currentUrl != _url) {
                 await _controller?.loadRequest(
                   Uri.parse(currentUrl),
                 );
@@ -211,46 +249,23 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
             if (!mounted) return;
 
+            final loggedIn = !url.contains('/auth/login');
+
             setState(() {
               _isLoading        = false;
               _isSlowConnection = false;
-              _isLoggedIn       =
-              !url.contains('/auth/login');
+              _isLoggedIn       = loggedIn;
             });
 
             debugPrint('Page loaded: $url');
 
-            // ======================================
-            // VIEWPORT FIX
-            // ======================================
+            if (loggedIn) {
+              debugPrint('LOGIN DETECTED');
+              await SessionManager.saveSession(url);
+              debugPrint('SESSION SAVED');
+            }
 
-            await _controller?.runJavaScript('''
-
-              // Disable zoom
-              var meta = document.querySelector(
-                'meta[name="viewport"]'
-              );
-
-              if (!meta) {
-
-                meta = document.createElement('meta');
-
-                meta.name = 'viewport';
-
-                document.head.appendChild(meta);
-              }
-
-              meta.content =
-                'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
-
-              // Smooth scrolling
-              document.body.style.overflow = 'auto';
-
-              document.documentElement.style.overflow = 'auto';
-
-              document.body.style.webkitOverflowScrolling = 'touch';
-
-            ''');
+            await _runPageScripts();
           },
 
           // ==========================================
@@ -288,6 +303,95 @@ class _WebViewScreenState extends State<WebViewScreen> {
       )
 
       ..loadRequest(Uri.parse(_url));
+  }
+
+  void _setupPreloadedController() {
+    _controller!
+      ..setBackgroundColor(const Color(0xFFFFF8F0))
+      ..enableZoom(false)
+      ..addJavaScriptChannel(
+        'FlutterBridge',
+        onMessageReceived: (JavaScriptMessage message) {
+          _handleKioskEvent(message.message);
+        },
+      )
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onProgress: (int progress) {
+            if (!mounted) return;
+            setState(() => _loadingProgress = progress / 100);
+          },
+          onPageStarted: (url) {
+            if (!mounted) return;
+            setState(() {
+              _isLoading = true;
+              _isSlowConnection = false;
+            });
+            _slowTimer?.cancel();
+            _slowTimer = Timer(const Duration(seconds: 8), () {
+              if (_isLoading && mounted) {
+                setState(() => _isSlowConnection = true);
+              }
+            });
+          },
+          onPageFinished: (url) async {
+            _slowTimer?.cancel();
+
+            if (!mounted) return;
+
+            final loggedIn = !url.contains('/auth/login');
+
+            setState(() {
+              _isLoading = false;
+              _isSlowConnection = false;
+              _isLoggedIn = loggedIn;
+            });
+
+            if (loggedIn) {
+              debugPrint('LOGIN DETECTED');
+              await SessionManager.saveSession(url);
+              debugPrint('SESSION SAVED');
+            }
+
+            await _runPageScripts();
+          },
+          onHttpError: (error) {
+            debugPrint('HTTP Error: ${error.response?.statusCode}');
+          },
+          onWebResourceError: (error) {
+            if (error.isForMainFrame == true) {
+              _checkInitialInternet();
+            }
+          },
+          onNavigationRequest: (_) => NavigationDecision.navigate,
+        ),
+      );
+
+    // setState(() => _isLoading = false);
+  }
+
+  // ✅ Extract JS scripts into reusable method
+  Future<void> _runPageScripts() async {
+    await _controller?.runJavaScript('''
+    var images = document.querySelectorAll('img');
+    images.forEach(function(img) {
+      img.style.maxWidth = '100%';
+      img.style.width = '100%';
+      img.style.height = 'auto';
+      img.style.objectFit = 'contain';
+    });
+
+    var meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.name = 'viewport';
+      document.head.appendChild(meta);
+    }
+    meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+    document.body.style.overflow = 'auto';
+    document.documentElement.style.overflow = 'auto';
+    document.body.style.webkitOverflowScrolling = 'touch';
+  ''');
   }
 
   // =====================================================
@@ -339,7 +443,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
   // KIOSK EVENTS
   // =====================================================
 
-  void _handleKioskEvent(String message) {
+  Future<void> _handleKioskEvent(String message) async {
 
     debugPrint('Kiosk event: $message');
 
@@ -353,12 +457,18 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
       switch (action) {
 
-        case 'print_usb':
+        case 'print_network':
 
           final content =
               data['content'] as String? ?? '';
 
-          _usbPrinter.printKioskContent(content);
+          if (_selectedPrinter != null) {
+
+            await _networkPrinter.printReceipt(
+              _selectedPrinter!,
+              content,
+            );
+          }
 
           break;
 
