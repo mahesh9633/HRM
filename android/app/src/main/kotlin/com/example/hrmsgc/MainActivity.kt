@@ -1,4 +1,4 @@
-package com.example.krishnamayuri
+package com.example.hrmsgc
 
 import io.flutter.embedding.android.FlutterActivity
 
