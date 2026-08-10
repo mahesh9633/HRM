@@ -27,7 +27,7 @@ class GheeDosaApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'HRM SGC',
+      title: 'HRM MTL',
 
       debugShowCheckedModeBanner: false,
 

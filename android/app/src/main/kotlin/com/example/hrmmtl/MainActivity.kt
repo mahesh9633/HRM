@@ -1,4 +1,4 @@
-package com.example.hrmsgc
+package com.example.hrmmtl
 
 import io.flutter.embedding.android.FlutterActivity
 

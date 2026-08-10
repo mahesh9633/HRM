@@ -29,7 +29,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
   NexDinePrinter? _selectedPrinter;
 
   static const String _url =
-      'https://hrmsgc.myteknoland.com/login';
+      'https://hrm.myteknoland.com/login';
 
   // Local testing URL:
   // static const String _url =
