@@ -109,11 +109,19 @@ class _SplashScreenState extends State<SplashScreen>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Image.asset(
-                        'assets/images/logo.webp',
-                        height: size.height * 0.32,
-                        width: size.width * 0.72,
-                        fit: BoxFit.contain,
+                      // Image.asset(
+                      //   'assets/images/logo.webp',
+                      //   height: size.height * 0.32,
+                      //   width: size.width * 0.72,
+                      //   fit: BoxFit.contain,
+                      // ),
+                      ClipOval(
+                        child: Image.asset(
+                          'assets/images/logo.webp',
+                          height: (size.shortestSide * 0.55).clamp(120.0, 260.0),
+                          width: (size.shortestSide * 0.55).clamp(120.0, 260.0),
+                          fit: BoxFit.cover,
+                        ),
                       ),
                     ],
                   ),

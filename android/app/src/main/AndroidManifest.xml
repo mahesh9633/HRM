@@ -25,7 +25,7 @@
 
     <application
         android:name="${applicationName}"
-        android:label="HRM MTL"
+        android:label="Manu Restaurant"
         android:icon="@mipmap/ic_launcher"
         android:hardwareAccelerated="true"
         android:usesCleartextTraffic="true"
