@@ -7,7 +7,6 @@ import 'package:internet_connection_checker/internet_connection_checker.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-
 import '../services/nexdine_printer.dart';
 import '../services/session_manager.dart';
 import '../services/usb_printer_manager.dart';
@@ -29,7 +28,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
   NexDinePrinter? _selectedPrinter;
 
   static const String _url =
-      'https://hrm.myteknoland.com/login';
+      'https://maya-bazar.nexdine.myteknoland.in/online-menu/mainmenu-mayabazar';
 
   // Local testing URL:
   // static const String _url =
