@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../services/session_manager.dart';
-import 'webview_screen.dart';
+import 'restaurant_selection_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -53,31 +53,28 @@ class _SplashScreenState extends State<SplashScreen>
       await Permission.camera.request();
       await Permission.location.request();
 
-      // Minimum splash duration, then navigate to WebViewScreen.
-      // flutter_inappwebview creates its controller inside the widget
-      // itself (no separate "preload" controller needed here) — the
-      // real page load starts as soon as WebViewScreen mounts.
+      // Minimum splash duration, then navigate to RestaurantSelectionScreen.
       final elapsed = DateTime.now().difference(_startTime);
       final remaining = const Duration(seconds: 3) - elapsed;
       if (remaining > Duration.zero) {
         await Future.delayed(remaining);
       }
 
-      _goToWebView();
+      _goToNextScreen();
     });
   }
 
-  void _goToWebView() {
+  void _goToNextScreen() {
     if (!mounted || _navigated) return;
 
     _navigated = true;
 
-    debugPrint('GO TO WEBVIEW');
+    debugPrint('GO TO RESTAURANT SELECTION');
 
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => const WebViewScreen(),
+        builder: (_) => const RestaurantSelectionScreen(),
       ),
     );
   }
@@ -91,67 +88,69 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        color: Colors.white,
-        child: Stack(
-          children: [
-            Center(
-              child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: ScaleTransition(
-                  scale: _scaleAnimation,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Image.asset(
-                        'assets/images/logo.webp',
-                        height: size.height * 0.32,
-                        width: size.width * 0.72,
-                        fit: BoxFit.contain,
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final double maxHeight = constraints.maxHeight;
+            final double maxWidth = constraints.maxWidth;
+
+            return Stack(
+              children: [
+                Center(
+                  child: FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: ScaleTransition(
+                      scale: _scaleAnimation,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Image.asset(
+                            'assets/images/logo.webp',
+                            height: (maxHeight * 0.32).clamp(120.0, 280.0),
+                            width: (maxWidth * 0.72).clamp(180.0, 400.0),
+                            fit: BoxFit.contain,
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ),
-            Positioned(
-              bottom: size.height * 0.08,
-              left: 0,
-              right: 0,
-              child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                Positioned(
+                  bottom: (maxHeight * 0.06).clamp(16.0, 60.0),
+                  left: 0,
+                  right: 0,
+                  child: FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: Column(
                       children: [
-                        _buildDot(0),
-                        const SizedBox(width: 8),
-                        _buildDot(200),
-                        const SizedBox(width: 8),
-                        _buildDot(400),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _buildDot(0),
+                            const SizedBox(width: 8),
+                            _buildDot(200),
+                            const SizedBox(width: 8),
+                            _buildDot(400),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Powered by Myteknoland',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Powered by Myteknoland',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-          ],
+              ],
+            );
+          },
         ),
       ),
     );
@@ -168,7 +167,7 @@ class _SplashScreenState extends State<SplashScreen>
           height: 9,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: const Color(0xFFFF6B1A).withOpacity(value),
+            color: const Color(0xFF80CC00).withOpacity(value),
           ),
         );
       },

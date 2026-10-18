@@ -27,12 +27,11 @@ class GheeDosaApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'HRM MTL',
+      title: 'NUTRI CAFE',
 
       debugShowCheckedModeBanner: false,
-
       theme: ThemeData(
-        colorSchemeSeed: const Color(0xFFFF6B35),
+        colorSchemeSeed: const Color(0xFF80CC00),
         useMaterial3: true,
       ),
 

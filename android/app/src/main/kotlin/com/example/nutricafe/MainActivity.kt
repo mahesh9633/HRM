@@ -1,4 +1,4 @@
-package com.example.hrmmtl
+package com.example.nutricafe
 
 import io.flutter.embedding.android.FlutterActivity
 
