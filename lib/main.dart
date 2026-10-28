@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'screens/splash_screen.dart';
+import 'theme/app_theme.dart';
 
 void main() async {
-
   WidgetsFlutterBinding.ensureInitialized();
 
   // Portrait lock
@@ -11,8 +11,7 @@ void main() async {
     DeviceOrientation.portraitUp,
   ]);
 
-  // ✅ Disable edge-to-edge fullscreen
-  // ✅ Show status bar + navigation bar properly
+  // Show status bar + navigation bar properly
   await SystemChrome.setEnabledSystemUIMode(
     SystemUiMode.manual,
     overlays: SystemUiOverlay.values,
@@ -27,14 +26,9 @@ class GheeDosaApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'NUTRI CAFE',
-
+      title: 'NEXDROP',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorSchemeSeed: const Color(0xFF80CC00),
-        useMaterial3: true,
-      ),
-
+      theme: AppTheme.lightTheme,
       home: const SplashScreen(),
     );
   }

@@ -1,9 +1,12 @@
+
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:internet_connection_checker/internet_connection_checker.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -13,6 +16,7 @@ import '../models/restaurant.dart';
 import '../services/nexdine_printer.dart';
 import '../services/restaurant_service.dart';
 import '../services/session_manager.dart';
+import '../theme/app_theme.dart';
 import '../services/usb_printer_manager.dart';
 import 'no_internet_screen.dart';
 
@@ -20,7 +24,7 @@ class WebViewScreen extends StatefulWidget {
   final String? initialUrl;
   final Restaurant? selectedRestaurant;
 
-  // NEW: the same list and filters used on the selection screen, so the
+  // The same list and filters used on the selection screen, so the
   // top bar shows only those restaurants (not every restaurant).
   final List<Restaurant>? restaurants;
   final String? pincode;
@@ -45,7 +49,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
   final Map<String, List<Cookie>> _branchCookies = {};
   final Map<String, String> _branchCurrentUrls = {};
 
-  // NEW: branches whose WebView has been created (opened at least once).
+  // Branches whose WebView has been created (opened at least once).
   // Branches not in this set are not loaded, so they never show a login
   // page before the user has logged in.
   final Set<String> _visitedBranches = {};
@@ -58,10 +62,15 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
   NexDinePrinter? _selectedPrinter;
 
-  String get _url =>
-      widget.initialUrl != null && widget.initialUrl!.isNotEmpty
-          ? widget.initialUrl!
-          : 'https://hrm.myteknoland.com/login';
+  String get _url {
+    if (widget.initialUrl != null && widget.initialUrl!.trim().isNotEmpty) {
+      return widget.initialUrl!.trim();
+    }
+    if (_selectedRestaurant != null && _selectedRestaurant!.url.trim().isNotEmpty) {
+      return _selectedRestaurant!.url.trim();
+    }
+    return 'https://nexdrop.nexdine.myteknoland.in';
+  }
 
   static const int _maxRetries = 3;
   static const Duration _retryDelay = Duration(seconds: 2);
@@ -99,13 +108,13 @@ class _WebViewScreenState extends State<WebViewScreen> {
     _selectedRestaurant = widget.selectedRestaurant;
     _selectedRestaurantId = widget.selectedRestaurant?.id;
 
-    // NEW: start with the same restaurants shown on the selection screen.
+    // Start with the same restaurants shown on the selection screen.
     if (widget.restaurants != null && widget.restaurants!.isNotEmpty) {
       _restaurants = List<Restaurant>.of(widget.restaurants!);
       _updateSelectedRestaurant();
     }
 
-    // NEW: the restaurant chosen on the selection screen is opened first.
+    // The restaurant chosen on the selection screen is opened first.
     if (_selectedRestaurantId != null && _selectedRestaurantId!.isNotEmpty) {
       _visitedBranches.add(_selectedRestaurantId!);
     }
@@ -160,10 +169,8 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
   Future<void> _fetchRestaurants() async {
     try {
-      // CHANGED: use the same pincode and Veg/Non-Veg filter as the
-      // selection screen, so both screens show the same restaurants.
+      // Fetch without pincode filter so all restaurants remain available for tab switching
       final list = await RestaurantService.fetchRestaurants(
-        pincode: widget.pincode,
         isVeg: widget.isVeg,
       );
       if (!mounted) return;
@@ -195,6 +202,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
         if (_isSameRestaurant(restaurant, _selectedRestaurant!)) {
           _selectedRestaurant = restaurant;
           _selectedRestaurantId = restaurant.id;
+          _visitedBranches.add(restaurant.id);
           return;
         }
       }
@@ -204,6 +212,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
       for (final restaurant in _restaurants) {
         if (restaurant.id == _selectedRestaurantId) {
           _selectedRestaurant = restaurant;
+          _visitedBranches.add(restaurant.id);
           return;
         }
       }
@@ -214,6 +223,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
       if (_isMatchingUrl(urlToCheck, restaurant.url)) {
         _selectedRestaurant = restaurant;
         _selectedRestaurantId = restaurant.id;
+        _visitedBranches.add(restaurant.id);
         return;
       }
     }
@@ -221,6 +231,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
     if (_selectedRestaurant == null) {
       _selectedRestaurant = _restaurants.first;
       _selectedRestaurantId = _restaurants.first.id;
+      _visitedBranches.add(_restaurants.first.id);
     }
   }
 
@@ -370,7 +381,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
   }
 
   // =====================================================
-  // NEW: RESTORE SESSION AT DOCUMENT START
+  // RESTORE SESSION AT DOCUMENT START
   // =====================================================
 
   /// JavaScript that writes the saved login data into localStorage /
@@ -442,7 +453,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
             url: targetUri,
             name: cookie.name,
             value: cookie.value,
-            // CHANGED: domain removed so the cookie is stored for the
+            // Domain removed so the cookie is stored for the
             // target branch host (not the first branch's domain).
             path: cookie.path ?? '/',
             isSecure: cookie.isSecure,
@@ -519,6 +530,19 @@ class _WebViewScreenState extends State<WebViewScreen> {
     }
   }
 
+  // =====================================================
+  // "ALL" CHIP -> BACK TO RESTAURANT SELECTION SCREEN
+  // =====================================================
+
+  /// Goes straight back to the restaurant selection screen (no dialog).
+  /// The selection screen is already below this screen in the navigation
+  /// stack, so we simply pop.
+  void _onAllTapped() {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
   int get _selectedIndex {
     if (_restaurants.isEmpty || _selectedRestaurant == null) return 0;
     final index = _restaurants.indexWhere(
@@ -533,49 +557,90 @@ class _WebViewScreenState extends State<WebViewScreen> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-      color: const Color(0xFF6CBF0A),
+      color: AppTheme.primary,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
         child: Row(
-          children: _restaurants.map((restaurant) {
-            final isSelected = _selectedRestaurant != null
-                ? _isSameRestaurant(restaurant, _selectedRestaurant!)
-                : false;
-
-            return Padding(
+          children: [
+            // NEW: "All" chip - goes back to the selection screen
+            Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: () => _onSwitchRestaurant(restaurant),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeOut,
+                onTap: _onAllTapped,
+                child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 18,
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: isSelected
-                        ? Colors.white
-                        : Colors.white.withAlpha(56),
+                    color: Colors.white.withAlpha(56),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Text(
-                    restaurant.name,
-                    style: TextStyle(
-                      fontSize: 13.5,
-                      fontWeight:
-                      isSelected ? FontWeight.w700 : FontWeight.w500,
-                      color: isSelected
-                          ? const Color(0xFF2E6B00)
-                          : Colors.white,
-                    ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.grid_view_rounded,
+                        size: 15,
+                        color: Colors.white,
+                      ),
+                      SizedBox(width: 6),
+                      Text(
+                        'All',
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            );
-          }).toList(),
+            ),
+
+            // Existing restaurant chips
+            ..._restaurants.map((restaurant) {
+              final isSelected = _selectedRestaurant != null
+                  ? _isSameRestaurant(restaurant, _selectedRestaurant!)
+                  : false;
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _onSwitchRestaurant(restaurant),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? Colors.white
+                          : Colors.white.withAlpha(56),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      restaurant.name,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight:
+                        isSelected ? FontWeight.w700 : FontWeight.w500,
+                        color: isSelected
+                            ? AppTheme.primaryDark
+                            : Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ],
         ),
       ),
     );
@@ -734,6 +799,178 @@ class _WebViewScreenState extends State<WebViewScreen> {
             }
           },
         );
+  }
+
+  // =====================================================
+  // SHOULD OVERRIDE URL LOADING (PAYMENT DEEP LINKS)
+  // =====================================================
+
+  Future<NavigationActionPolicy?> _handleShouldOverrideUrlLoading(
+    InAppWebViewController controller,
+    NavigationAction navigationAction,
+  ) async {
+    final uri = navigationAction.request.url;
+    if (uri == null) return NavigationActionPolicy.ALLOW;
+
+    final urlString = uri.toString().trim();
+    if (urlString.isEmpty) return NavigationActionPolicy.ALLOW;
+
+    final scheme = uri.scheme.toLowerCase();
+
+    // 1. Standard web pages - allow normal navigation
+    if (scheme == 'http' ||
+        scheme == 'https' ||
+        scheme == 'about' ||
+        scheme == 'data' ||
+        scheme == 'blob' ||
+        scheme == 'javascript') {
+      return NavigationActionPolicy.ALLOW;
+    }
+
+    // 2. Custom payment schemes, UPI & Intent links
+    await _launchExternalPaymentApp(urlString, uri);
+    return NavigationActionPolicy.CANCEL;
+  }
+
+  Future<void> _launchExternalPaymentApp(
+    String rawUrlString,
+    WebUri rawUri,
+  ) async {
+    try {
+      final uri = Uri.parse(rawUrlString);
+      final scheme = uri.scheme.toLowerCase();
+
+      // Log exact scheme, host, and path WITHOUT sensitive query parameters
+      debugPrint('Payment URL received: scheme="$scheme", host="${uri.host}", path="${uri.path}"');
+
+      // Case A: Android Intent URIs (e.g., intent://pay?pa=...#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end)
+      if (rawUrlString.startsWith('intent://')) {
+        final intentUri = Uri.parse(rawUrlString);
+
+        // 1. Try launching the raw intent URI directly
+        if (await _tryLaunchPaymentUri(intentUri)) {
+          return;
+        }
+
+        // 2. Extract fallback browser URL if present in intent: S.browser_fallback_url=...
+        final fallbackMatch =
+            RegExp(r'S\.browser_fallback_url=([^;]+)').firstMatch(rawUrlString);
+        if (fallbackMatch != null && fallbackMatch.groupCount >= 1) {
+          final rawFallback = fallbackMatch.group(1)!;
+          final decodedFallback = Uri.decodeComponent(rawFallback);
+          debugPrint('Found intent fallback URL');
+          final fallbackUri = Uri.parse(decodedFallback);
+          if (await _tryLaunchPaymentUri(fallbackUri)) {
+            return;
+          }
+        }
+
+        // 3. Extract scheme from intent string: #Intent;scheme=tez;... or #Intent;scheme=phonepe;...
+        final schemeMatch =
+            RegExp(r'#Intent;.*?scheme=([^;]+)').firstMatch(rawUrlString);
+        if (schemeMatch != null && schemeMatch.groupCount >= 1) {
+          final extractedScheme = schemeMatch.group(1)!;
+          final pathWithQuery = rawUrlString.substring(9).split('#Intent;').first;
+          final constructedUrl = '$extractedScheme://$pathWithQuery';
+          final constructedUri = Uri.parse(constructedUrl);
+          if (await _tryLaunchPaymentUri(constructedUri)) {
+            return;
+          }
+        }
+
+        String appName = 'Payment app';
+        if (rawUrlString.contains('com.google.android.apps.nbu.paisa.user') ||
+            rawUrlString.contains('tez') ||
+            rawUrlString.contains('gpay')) {
+          appName = 'Google Pay';
+        } else if (rawUrlString.contains('com.phonepe.app') ||
+            rawUrlString.contains('phonepe')) {
+          appName = 'PhonePe';
+        } else if (rawUrlString.contains('net.one97.paytm') ||
+            rawUrlString.contains('paytm')) {
+          appName = 'Paytm';
+        }
+
+        _showPaymentAppNotInstalledSnackBar(appName);
+        return;
+      }
+
+      // Case B: Direct Custom Schemes (tez://, gpay://, phonepe://, paytmmp://, upi://, etc.)
+      if (await _tryLaunchPaymentUri(uri)) {
+        return;
+      }
+
+      final appName = _getFriendlyPaymentAppName(scheme);
+      _showPaymentAppNotInstalledSnackBar(appName);
+    } catch (e) {
+      debugPrint('Error launching payment deep link: $e');
+      _showPaymentAppNotInstalledSnackBar('Payment app');
+    }
+  }
+
+  Future<bool> _tryLaunchPaymentUri(Uri uri) async {
+    try {
+      if (await canLaunchUrl(uri)) {
+        final launched = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+        if (launched) return true;
+      }
+    } catch (e) {
+      debugPrint('canLaunchUrl exception for scheme "${uri.scheme}": $e');
+    }
+
+    // Fallback: Attempt direct launchUrl in case canLaunchUrl returned false due to OS package visibility restrictions
+    try {
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (launched) return true;
+    } catch (e) {
+      debugPrint('Direct launchUrl exception for scheme "${uri.scheme}": $e');
+    }
+
+    return false;
+  }
+
+  String _getFriendlyPaymentAppName(String scheme) {
+    switch (scheme.toLowerCase()) {
+      case 'tez':
+      case 'gpay':
+      case 'googlepay':
+        return 'Google Pay';
+      case 'phonepe':
+        return 'PhonePe';
+      case 'paytmmp':
+      case 'paytm':
+        return 'Paytm';
+      case 'cred':
+        return 'CRED';
+      case 'bhim':
+        return 'BHIM';
+      case 'mobikwik':
+        return 'MobiKwik';
+      case 'upi':
+        return 'UPI Payment App';
+      default:
+        return 'Payment app';
+    }
+  }
+
+  void _showPaymentAppNotInstalledSnackBar(String appName) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '$appName is not installed on your device. Please choose another payment method.',
+        ),
+        backgroundColor: Colors.orange.shade800,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
+      ),
+    );
   }
 
   // =====================================================
@@ -1220,7 +1457,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
           );
         } catch (_) {}
 
-        // NEW: remove the restore script so the old session is not
+        // Remove the restore script so the old session is not
         // written back after logout.
         try {
           await controller.removeAllUserScripts();
@@ -1421,7 +1658,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
       initialUrlRequest: URLRequest(
         url: WebUri(initialUrl),
       ),
-      // NEW: restore the saved login BEFORE the website's JavaScript runs.
+      // Restore the saved login BEFORE the website's JavaScript runs.
       initialUserScripts: UnmodifiableListView<UserScript>([
         if (_isLoggedIn && _sharedStorageJson != null)
           UserScript(
@@ -1440,7 +1677,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
         builtInZoomControls: false,
         displayZoomControls: false,
         transparentBackground: false,
-        useShouldOverrideUrlLoading: false,
+        useShouldOverrideUrlLoading: true,
         cacheEnabled: true,
         verticalScrollBarEnabled: true,
         horizontalScrollBarEnabled: true,
@@ -1448,6 +1685,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
         disallowOverScroll: false,
         thirdPartyCookiesEnabled: true,
       ),
+      shouldOverrideUrlLoading: _handleShouldOverrideUrlLoading,
       onWebViewCreated: (controller) async {
         _controllers[branchId] = controller;
         _registerJsHandlers(controller, branchId);
@@ -1543,6 +1781,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
           }
         }
 
+        if (!mounted) return;
         if (_selectedRestaurant?.id == branchId || _restaurants.isEmpty) {
           setState(() {
             _isLoading = false;
@@ -1558,7 +1797,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
         if (url == null || !mounted) return;
         final urlString = url.toString();
 
-        // NEW: give the website a moment to save the token after login.
+        // Give the website a moment to save the token after login.
         await Future.delayed(const Duration(milliseconds: 500));
         if (!mounted) return;
 
@@ -1629,13 +1868,13 @@ class _WebViewScreenState extends State<WebViewScreen> {
       );
     }
 
-    // NEW: make sure the currently selected branch is always created.
+    // Make sure the currently selected branch is always created.
     _visitedBranches.add(_selectedRestaurant?.id ?? _restaurants.first.id);
 
     return IndexedStack(
       index: _selectedIndex,
       children: _restaurants.map((branch) {
-        // NEW: branches that were never opened stay empty (not loaded).
+        // Branches that were never opened stay empty (not loaded).
         if (!_visitedBranches.contains(branch.id)) {
           return SizedBox.shrink(key: ValueKey('empty_${branch.id}'));
         }
@@ -1704,23 +1943,36 @@ class _WebViewScreenState extends State<WebViewScreen> {
         await _handleBackButton();
       },
       child: Scaffold(
-        appBar: _isLoading
-            ? PreferredSize(
-          preferredSize: const Size.fromHeight(3),
-          child: LinearProgressIndicator(
-            value: _loadingProgress,
-            backgroundColor: Colors.transparent,
-            color: const Color(0xFF80CC00),
+        backgroundColor: Colors.white,
+        // Orange colour goes behind the status bar (time, signal, battery)
+        // and the status bar icons are shown in white.
+        body: AnnotatedRegion<SystemUiOverlayStyle>(
+          value: const SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: Brightness.light, // Android
+            statusBarBrightness: Brightness.dark, // iOS
           ),
-        )
-            : null,
-        body: SafeArea(
-          top: true,
-          bottom: false,
           child: Column(
             children: [
-              if (_restaurants.isNotEmpty)
-                _buildRestaurantSelector(),
+              // Orange area = status bar height + restaurant chips
+              Container(
+                width: double.infinity,
+                color: AppTheme.primary,
+                padding: EdgeInsets.only(
+                  top: MediaQuery.of(context).padding.top,
+                ),
+                child: _buildRestaurantSelector(),
+              ),
+
+              // Loading bar sits BELOW the orange area (no layout jump)
+              if (_isLoading)
+                LinearProgressIndicator(
+                  value: _loadingProgress,
+                  minHeight: 3,
+                  backgroundColor: Colors.transparent,
+                  color: AppTheme.primaryDark,
+                ),
+
               Expanded(
                 child: _buildContent(),
               ),

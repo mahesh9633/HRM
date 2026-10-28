@@ -1,32 +1,32 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 import '../models/restaurant.dart';
 
 class RestaurantService {
-  static const String apiUrl =
-      'https://myteknoland.com/JEWELLERY/index.php?route=restaurant/restaurant';
-
   static Future<List<Restaurant>> fetchRestaurants({
     String? pincode,
     String? isVeg,
   }) async {
     try {
-      String urlStr = apiUrl;
+      String urlStr = ApiConfig.baseUrl;
 
+      final queryParams = <String>[];
       if (pincode != null && pincode.trim().isNotEmpty) {
-        final cleanPincode = Uri.encodeComponent(pincode.trim());
-        urlStr += '&pincode=$cleanPincode';
+        queryParams.add('pincode=${Uri.encodeComponent(pincode.trim())}');
+      }
+      if (isVeg != null && isVeg.trim().isNotEmpty) {
+        queryParams.add('is_veg=${Uri.encodeComponent(isVeg.trim())}');
       }
 
-      if (isVeg != null && isVeg.trim().isNotEmpty) {
-        final cleanVeg = Uri.encodeComponent(isVeg.trim());
-        urlStr += '&is_veg=$cleanVeg';
+      if (queryParams.isNotEmpty) {
+        final separator = urlStr.contains('?') ? '&' : '?';
+        urlStr += separator + queryParams.join('&');
       }
 
       final uri = Uri.parse(urlStr);
-      debugPrint('Detected pincode parameter: $pincode');
-      debugPrint('Outgoing API URL: $uri');
+      debugPrint('Fetching restaurants API URL: $uri');
 
       final response = await http
           .get(uri)
@@ -36,16 +36,9 @@ class RestaurantService {
         throw Exception('Server returned status code ${response.statusCode}');
       }
 
-      dynamic jsonResponse;
-      try {
-        jsonResponse = jsonDecode(response.body);
-      } catch (e) {
-        debugPrint('JSON parse error on response: ${response.body}');
-        rethrow;
-      }
+      final dynamic jsonResponse = jsonDecode(response.body);
 
       if (jsonResponse is! Map<String, dynamic>) {
-        debugPrint('Number of restaurants returned: 0');
         return [];
       }
 
@@ -56,14 +49,18 @@ class RestaurantService {
 
       final data = jsonResponse['data'];
       if (data == null || data is! List) {
-        debugPrint('Number of restaurants returned: 0');
         return [];
       }
 
       final List<Restaurant> restaurants = data
           .map((item) {
             if (item is Map<String, dynamic>) {
-              return Restaurant.fromJson(item);
+              try {
+                return Restaurant.fromJson(item);
+              } catch (e) {
+                debugPrint('Error parsing restaurant item: $e');
+                return null;
+              }
             }
             return null;
           })
@@ -71,14 +68,76 @@ class RestaurantService {
           .where((r) => r.status == '1')
           .toList();
 
-      // Sort by sequence in ascending order
+      // Sort by sequence ascending
       restaurants.sort((a, b) => a.sequence.compareTo(b.sequence));
 
-      debugPrint('Number of restaurants returned: ${restaurants.length}');
+      debugPrint('Restaurants fetched successfully: ${restaurants.length}');
       return restaurants;
     } catch (e) {
-      debugPrint('Error fetching restaurants: $e');
+      debugPrint('Error fetching restaurants from API: $e');
       rethrow;
+    }
+  }
+
+  static Future<List<Restaurant>> fetchTopRated({
+    String? isVeg,
+  }) async {
+    try {
+      String urlStr = ApiConfig.topRatedUrl;
+
+      if (isVeg != null && isVeg.trim().isNotEmpty) {
+        final separator = urlStr.contains('?') ? '&' : '?';
+        urlStr += '${separator}is_veg=${Uri.encodeComponent(isVeg.trim())}';
+      }
+
+      final uri = Uri.parse(urlStr);
+      debugPrint('Fetching top rated restaurants API URL: $uri');
+
+      final response = await http
+          .get(uri)
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode != 200) {
+        throw Exception('Server returned status code ${response.statusCode}');
+      }
+
+      final dynamic jsonResponse = jsonDecode(response.body);
+
+      if (jsonResponse is! Map<String, dynamic>) {
+        return [];
+      }
+
+      final status = jsonResponse['status']?.toString();
+      if (status != 'success') {
+        throw Exception('API status indicates failure: $status');
+      }
+
+      final data = jsonResponse['data'];
+      if (data == null || data is! List) {
+        return [];
+      }
+
+      final List<Restaurant> restaurants = data
+          .map((item) {
+            if (item is Map<String, dynamic>) {
+              try {
+                return Restaurant.fromJson(item);
+              } catch (e) {
+                debugPrint('Error parsing top rated restaurant item: $e');
+                return null;
+              }
+            }
+            return null;
+          })
+          .whereType<Restaurant>()
+          .where((r) => r.status == '1')
+          .toList();
+
+      debugPrint('Top rated restaurants fetched: ${restaurants.length}');
+      return restaurants;
+    } catch (e) {
+      debugPrint('Error fetching top rated restaurants: $e');
+      return [];
     }
   }
 }

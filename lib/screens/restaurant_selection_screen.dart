@@ -1,11 +1,1202 @@
+// import 'dart:async';
+// import 'package:flutter/material.dart';
+// import 'package:geolocator/geolocator.dart';
+// import '../models/restaurant.dart';
+// import '../repositories/restaurant_repository.dart';
+// import '../services/location_service.dart';
+// import '../theme/app_theme.dart';
+// import '../widgets/restaurant_card.dart';
+// import '../widgets/restaurant_skeleton.dart';
+// import 'closed_restaurant_screen.dart';
+// import 'contact_us_screen.dart';
+// import 'location_picker_screen.dart';
+// import 'webview_screen.dart';
+//
+// /// Keeps the search bar pinned at the top of the screen once the orange
+// /// header has scrolled away. While pinned (content scrolling underneath)
+// /// it gets the orange colour, so it looks like the new app bar.
+// class _SearchHeaderDelegate extends SliverPersistentHeaderDelegate {
+//   final Widget child;
+//   final double height;
+//   final Color pinnedColor;
+//
+//   _SearchHeaderDelegate({
+//     required this.child,
+//     required this.height,
+//     required this.pinnedColor,
+//   });
+//
+//   @override
+//   double get minExtent => height;
+//
+//   @override
+//   double get maxExtent => height;
+//
+//   @override
+//   Widget build(
+//       BuildContext context,
+//       double shrinkOffset,
+//       bool overlapsContent,
+//       ) {
+//     return Container(
+//       height: height,
+//       color: overlapsContent ? pinnedColor : Colors.white,
+//       padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+//       child: child,
+//     );
+//   }
+//
+//   @override
+//   bool shouldRebuild(covariant _SearchHeaderDelegate oldDelegate) => true;
+// }
+//
+// class RestaurantSelectionScreen extends StatefulWidget {
+//   const RestaurantSelectionScreen({super.key});
+//
+//   @override
+//   State<RestaurantSelectionScreen> createState() =>
+//       _RestaurantSelectionScreenState();
+// }
+//
+// class _RestaurantSelectionScreenState extends State<RestaurantSelectionScreen>
+//     with WidgetsBindingObserver {
+//   Timer? _statusUpdateTimer;
+//
+//   List<Restaurant>? _allRestaurants;
+//   bool _isLoading = true;
+//   String? _errorMessage;
+//
+//   LocationAddress? _currentAddress;
+//   String? _selectedPincode;
+//   bool _isLocationDetecting = false;
+//   String? _locationError;
+//
+//   // Filter & Search states
+//   String _selectedVegFilter = 'all'; // 'all', '1' (Veg), '0' (Non-Veg)
+//   String _searchQuery = '';
+//
+//   final TextEditingController _searchController = TextEditingController();
+//
+//   StreamSubscription<Position>? _positionSubscription;
+//
+//   @override
+//   void initState() {
+//     super.initState();
+//     WidgetsBinding.instance.addObserver(this);
+//     _initLocationAndLoadData();
+//     _startStatusUpdateTimer();
+//   }
+//
+//   /// Timer that re-evaluates Open/Closed statuses every 5 seconds
+//   void _startStatusUpdateTimer() {
+//     _statusUpdateTimer?.cancel();
+//     _statusUpdateTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+//       if (mounted && _allRestaurants != null) {
+//         setState(() {
+//           // Triggers rebuild to re-evaluate isOpenNow() and move restaurants between Open & Closed
+//         });
+//       }
+//     });
+//   }
+//
+//   @override
+//   void didChangeAppLifecycleState(AppLifecycleState state) {
+//     if (state == AppLifecycleState.resumed) {
+//       _initLocationAndLoadData();
+//     }
+//   }
+//
+//   String? _getVegParam() {
+//     if (_selectedVegFilter == '1') return '1';
+//     if (_selectedVegFilter == '0') return '0';
+//     return null;
+//   }
+//
+//   Future<void> _initLocationAndLoadData() async {
+//     if (!mounted) return;
+//     setState(() {
+//       _isLocationDetecting = true;
+//       _locationError = null;
+//     });
+//
+//     try {
+//       final pos = await LocationService.getCurrentPosition();
+//       if (pos != null) {
+//         final addr = await LocationService.reverseGeocode(
+//           pos.latitude,
+//           pos.longitude,
+//         );
+//         debugPrint('LOCATION DETECTED: addr=${addr?.address} pincode=${addr?.pincode}');
+//         if (mounted) {
+//           setState(() {
+//             _currentAddress = addr;
+//             if (addr != null && addr.pincode.isNotEmpty) {
+//               _selectedPincode = addr.pincode;
+//             } else {
+//               _selectedPincode = null;
+//             }
+//           });
+//         }
+//       } else {
+//         if (mounted) {
+//           setState(() {
+//             _locationError = 'GPS location disabled or permission denied';
+//             _selectedPincode = null;
+//           });
+//         }
+//       }
+//     } catch (e) {
+//       debugPrint('Location detection error: $e');
+//       if (mounted) {
+//         setState(() {
+//           _locationError = 'Unable to detect location automatically';
+//           _selectedPincode = null;
+//         });
+//       }
+//     } finally {
+//       if (mounted) {
+//         setState(() {
+//           _isLocationDetecting = false;
+//         });
+//       }
+//     }
+//
+//     await _fetchRestaurantList();
+//   }
+//
+//   Future<void> _fetchRestaurantList() async {
+//     if (!mounted) return;
+//
+//     // Case E: If pincode is null or empty, do not fetch with empty pincode or show all restaurants
+//     if (_selectedPincode == null || _selectedPincode!.trim().isEmpty) {
+//       setState(() {
+//         _isLoading = false;
+//         _allRestaurants = [];
+//         _errorMessage = null;
+//       });
+//       return;
+//     }
+//
+//     setState(() {
+//       _isLoading = true;
+//       _errorMessage = null;
+//     });
+//
+//     try {
+//       final list = await RestaurantRepository.getRestaurants(
+//         pincode: _selectedPincode,
+//         isVeg: _getVegParam(),
+//       );
+//       if (!mounted) return;
+//
+//       setState(() {
+//         _allRestaurants = list;
+//         _isLoading = false;
+//       });
+//     } catch (e) {
+//       if (!mounted) return;
+//       setState(() {
+//         _allRestaurants = null;
+//         _errorMessage =
+//         'Unable to load restaurants. Please check your connection and retry.';
+//         _isLoading = false;
+//       });
+//     }
+//   }
+//
+//   Future<void> _openLocationPicker() async {
+//     final selected = await Navigator.push<LocationAddress>(
+//       context,
+//       MaterialPageRoute(
+//         builder: (_) => LocationPickerScreen(
+//           initialLocation: _currentAddress,
+//         ),
+//       ),
+//     );
+//
+//     if (selected != null && mounted) {
+//       setState(() {
+//         _currentAddress = selected;
+//         _selectedPincode =
+//         selected.pincode.isNotEmpty ? selected.pincode : null;
+//         _locationError = null;
+//       });
+//       await _fetchRestaurantList();
+//     }
+//   }
+//
+//   void _onFilterChanged(String filterValue) {
+//     if (_selectedVegFilter == filterValue) return;
+//     setState(() {
+//       _selectedVegFilter = filterValue;
+//     });
+//     _fetchRestaurantList();
+//   }
+//
+//   void _onRestaurantSelected(Restaurant restaurant) {
+//     if (restaurant.isOpenNow()) {
+//       final rawUrl = restaurant.url.trim();
+//
+//       if (rawUrl.isEmpty) {
+//         _showErrorSnackBar('Invalid restaurant menu link.');
+//         return;
+//       }
+//
+//       final formattedUrl =
+//       (rawUrl.startsWith('http://') || rawUrl.startsWith('https://'))
+//           ? rawUrl
+//           : 'https://$rawUrl';
+//
+//       Navigator.push(
+//         context,
+//         MaterialPageRoute(
+//           builder: (_) => WebViewScreen(
+//             initialUrl: formattedUrl,
+//             selectedRestaurant: restaurant,
+//             restaurants: _allRestaurants,
+//             pincode: _selectedPincode,
+//             isVeg: _getVegParam(),
+//           ),
+//         ),
+//       );
+//     } else {
+//       // Closed restaurant: Open Closed Details Screen with live countdown
+//       Navigator.push(
+//         context,
+//         MaterialPageRoute(
+//           builder: (_) => ClosedRestaurantScreen(
+//             restaurant: restaurant,
+//             allRestaurants: _allRestaurants,
+//           ),
+//         ),
+//       ).then((_) {
+//         if (mounted) setState(() {});
+//       });
+//     }
+//   }
+//
+//   void _showErrorSnackBar(String message) {
+//     ScaffoldMessenger.of(context).showSnackBar(
+//       SnackBar(
+//         content: Text(message),
+//         backgroundColor: AppTheme.closedRed,
+//         behavior: SnackBarBehavior.floating,
+//       ),
+//     );
+//   }
+//
+//   @override
+//   void dispose() {
+//     _statusUpdateTimer?.cancel();
+//     _searchController.dispose();
+//     WidgetsBinding.instance.removeObserver(this);
+//     _positionSubscription?.cancel();
+//     super.dispose();
+//   }
+//
+//   // =====================================================
+//   // BUILD
+//   // =====================================================
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     final double topPad = MediaQuery.of(context).padding.top;
+//
+//     return Scaffold(
+//       backgroundColor: Colors.white,
+//       body: SafeArea(
+//         top: false,
+//         child: Stack(
+//           children: [
+//             // Everything scrolls inside ONE scroll view:
+//             //   header (scrolls away) -> search bar (PINS at top) ->
+//             //   filter chips (scroll away) -> restaurants.
+//             Padding(
+//               padding: EdgeInsets.only(top: topPad),
+//               child: RefreshIndicator(
+//                 onRefresh: _initLocationAndLoadData,
+//                 color: AppTheme.primary,
+//                 child: CustomScrollView(
+//                   physics: const AlwaysScrollableScrollPhysics(),
+//                   slivers: [
+//                     // 1. ORANGE HEADER - scrolls away
+//                     SliverToBoxAdapter(child: _buildHeader()),
+//
+//                     // 2. SEARCH BAR - stays pinned at the top
+//                     SliverPersistentHeader(
+//                       pinned: true,
+//                       delegate: _SearchHeaderDelegate(
+//                         height: 64,
+//                         pinnedColor: AppTheme.primaryDark,
+//                         child: _buildSearchBar(),
+//                       ),
+//                     ),
+//
+//                     // 3. FILTER CHIPS - scroll away
+//                     SliverToBoxAdapter(child: _buildFilterChips()),
+//
+//                     // 4. RESTAURANTS - keep scrolling
+//                     ..._buildContentSlivers(),
+//                   ],
+//                 ),
+//               ),
+//             ),
+//
+//             // Solid orange strip behind the status bar (time, signal,
+//             // battery), always visible, so pinned search bar looks like
+//             // an app bar.
+//             Positioned(
+//               top: 0,
+//               left: 0,
+//               right: 0,
+//               height: topPad,
+//               child: Container(color: AppTheme.primaryDark),
+//             ),
+//           ],
+//         ),
+//       ),
+//     );
+//   }
+//
+//   // =====================================================
+//   // HEADER (title + location)
+//   // =====================================================
+//
+//   Widget _buildHeader() {
+//     String addressText;
+//     String pincodeText;
+//
+//     if (_isLocationDetecting && _currentAddress == null) {
+//       addressText = 'Getting your location...';
+//       pincodeText = 'Please wait...';
+//     } else if (_currentAddress != null) {
+//       addressText = _currentAddress!.address;
+//       pincodeText = _selectedPincode != null && _selectedPincode!.isNotEmpty
+//           ? 'Pincode: $_selectedPincode'
+//           : 'Pincode unresolved (Tap Change)';
+//     } else {
+//       addressText = _locationError ?? 'Location not available';
+//       pincodeText = 'Tap Change to set location';
+//     }
+//
+//     return Container(
+//       padding: const EdgeInsets.only(
+//         top: 6,
+//         left: 16,
+//         right: 16,
+//         bottom: 12,
+//       ),
+//       decoration: const BoxDecoration(
+//         gradient: LinearGradient(
+//           begin: Alignment.topCenter,
+//           end: Alignment.bottomCenter,
+//           colors: [AppTheme.primaryDark, AppTheme.primary],
+//         ),
+//       ),
+//       child: Column(
+//         mainAxisSize: MainAxisSize.min,
+//         children: [
+//           // Row 1: App Title
+//           const Row(
+//             children: [
+//               Icon(Icons.restaurant_menu, color: Colors.white, size: 22),
+//               SizedBox(width: 8),
+//               Text(
+//                 'NEXDROP',
+//                 style: TextStyle(
+//                   fontSize: 18,
+//                   fontWeight: FontWeight.bold,
+//                   color: Colors.white,
+//                   letterSpacing: 0.5,
+//                 ),
+//               ),
+//             ],
+//           ),
+//           const SizedBox(height: 10),
+//
+//           // Row 2: Location icon + Address & Pincode + "Change" pill button
+//           Row(
+//             crossAxisAlignment: CrossAxisAlignment.center,
+//             children: [
+//               const Icon(Icons.location_on, color: Colors.white, size: 20),
+//               const SizedBox(width: 6),
+//               Expanded(
+//                 child: Column(
+//                   crossAxisAlignment: CrossAxisAlignment.start,
+//                   children: [
+//                     Row(
+//                       children: [
+//                         Flexible(
+//                           child: Text(
+//                             addressText,
+//                             maxLines: 1,
+//                             overflow: TextOverflow.ellipsis,
+//                             style: const TextStyle(
+//                               fontSize: 13,
+//                               fontWeight: FontWeight.bold,
+//                               color: Colors.white,
+//                             ),
+//                           ),
+//                         ),
+//                         if (_isLocationDetecting) ...[
+//                           const SizedBox(width: 6),
+//                           const SizedBox(
+//                             width: 10,
+//                             height: 10,
+//                             child: CircularProgressIndicator(
+//                               strokeWidth: 1.5,
+//                               color: Colors.white,
+//                             ),
+//                           ),
+//                         ],
+//                       ],
+//                     ),
+//                     Text(
+//                       pincodeText,
+//                       style: const TextStyle(
+//                         fontSize: 11,
+//                         color: Colors.white70,
+//                       ),
+//                     ),
+//                   ],
+//                 ),
+//               ),
+//               const SizedBox(width: 8),
+//               OutlinedButton(
+//                 onPressed: _openLocationPicker,
+//                 style: OutlinedButton.styleFrom(
+//                   foregroundColor: Colors.white,
+//                   side: const BorderSide(color: Colors.white, width: 1.2),
+//                   padding:
+//                   const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+//                   minimumSize: Size.zero,
+//                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+//                   shape: RoundedRectangleBorder(
+//                     borderRadius: BorderRadius.circular(20),
+//                   ),
+//                 ),
+//                 child: const Text(
+//                   'Change',
+//                   style: TextStyle(
+//                     fontSize: 12,
+//                     fontWeight: FontWeight.bold,
+//                     color: Colors.white,
+//                   ),
+//                 ),
+//               ),
+//             ],
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+//
+//   // =====================================================
+//   // SEARCH BAR & FILTER CHIPS
+//   // =====================================================
+//
+//   Widget _buildSearchBar() {
+//     return Container(
+//       height: 42,
+//       decoration: BoxDecoration(
+//         color: const Color(0xFFF2F4F7),
+//         borderRadius: BorderRadius.circular(12),
+//       ),
+//       child: TextField(
+//         controller: _searchController,
+//         onChanged: (val) {
+//           setState(() => _searchQuery = val);
+//         },
+//         decoration: InputDecoration(
+//           hintText: 'Search for restaurants...',
+//           hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+//           prefixIcon:
+//           const Icon(Icons.search, size: 20, color: AppTheme.primaryDark),
+//           suffixIcon: _searchQuery.isNotEmpty
+//               ? IconButton(
+//             icon: const Icon(Icons.clear, size: 18),
+//             onPressed: () {
+//               _searchController.clear();
+//               setState(() => _searchQuery = '');
+//             },
+//           )
+//               : null,
+//           border: InputBorder.none,
+//           contentPadding: const EdgeInsets.symmetric(vertical: 10),
+//         ),
+//       ),
+//     );
+//   }
+//
+//   Widget _buildFilterChips() {
+//     return Padding(
+//       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+//       child: Row(
+//         children: [
+//           _buildChip(
+//             label: 'All',
+//             isSelected: _selectedVegFilter == 'all',
+//             onTap: () => _onFilterChanged('all'),
+//           ),
+//           const SizedBox(width: 8),
+//           _buildChip(
+//             label: 'Veg',
+//             isSelected: _selectedVegFilter == '1',
+//             onTap: () => _onFilterChanged('1'),
+//             icon: Icons.circle,
+//             iconColor: AppTheme.openGreen,
+//           ),
+//           const SizedBox(width: 8),
+//           _buildChip(
+//             label: 'Non-Veg',
+//             isSelected: _selectedVegFilter == '0',
+//             onTap: () => _onFilterChanged('0'),
+//             icon: Icons.change_history,
+//             iconColor: AppTheme.closedRed,
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+//
+//   Widget _buildChip({
+//     required String label,
+//     required bool isSelected,
+//     required VoidCallback onTap,
+//     IconData? icon,
+//     Color? iconColor,
+//   }) {
+//     return GestureDetector(
+//       onTap: onTap,
+//       child: AnimatedContainer(
+//         duration: const Duration(milliseconds: 200),
+//         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+//         decoration: BoxDecoration(
+//           color: isSelected ? AppTheme.primary : AppTheme.chipUnselected,
+//           borderRadius: BorderRadius.circular(20),
+//         ),
+//         child: Row(
+//           mainAxisSize: MainAxisSize.min,
+//           children: [
+//             if (icon != null) ...[
+//               Icon(
+//                 icon,
+//                 size: 10,
+//                 color: isSelected
+//                     ? Colors.white
+//                     : (iconColor ?? AppTheme.textDark),
+//               ),
+//               const SizedBox(width: 5),
+//             ],
+//             Text(
+//               label,
+//               style: TextStyle(
+//                 fontSize: 13,
+//                 fontWeight: FontWeight.bold,
+//                 color: isSelected ? Colors.white : AppTheme.textDark,
+//               ),
+//             ),
+//           ],
+//         ),
+//       ),
+//     );
+//   }
+//
+//   // =====================================================
+//   // CONTENT (as slivers, so everything scrolls together)
+//   // =====================================================
+//
+//   Widget _padSliver(Widget sliver) {
+//     return SliverPadding(
+//       padding: const EdgeInsets.symmetric(horizontal: 16),
+//       sliver: sliver,
+//     );
+//   }
+//
+//   List<Widget> _buildContentSlivers() {
+//     if (_isLocationDetecting || _isLoading) {
+//       return [
+//         const SliverFillRemaining(
+//           child: RestaurantSkeleton(),
+//         ),
+//       ];
+//     }
+//
+//     if (_errorMessage != null) {
+//       return [
+//         SliverFillRemaining(
+//           hasScrollBody: false,
+//           child: Center(
+//             child: Padding(
+//               padding: const EdgeInsets.all(24.0),
+//               child: Column(
+//                 mainAxisSize: MainAxisSize.min,
+//                 children: [
+//                   const Icon(Icons.wifi_off_rounded,
+//                       size: 56, color: Colors.orange),
+//                   const SizedBox(height: 16),
+//                   Text(
+//                     _errorMessage!,
+//                     textAlign: TextAlign.center,
+//                     style: const TextStyle(
+//                         fontSize: 15, color: AppTheme.textDark),
+//                   ),
+//                   const SizedBox(height: 20),
+//                   ElevatedButton.icon(
+//                     onPressed: _fetchRestaurantList,
+//                     icon: const Icon(Icons.refresh),
+//                     label: const Text('Retry'),
+//                   ),
+//                 ],
+//               ),
+//             ),
+//           ),
+//         ),
+//       ];
+//     }
+//
+//     // Unresolved location or missing pincode state (Case E)
+//     if (_selectedPincode == null || _selectedPincode!.trim().isEmpty) {
+//       return [
+//         SliverFillRemaining(
+//           hasScrollBody: false,
+//           child: Center(
+//             child: Padding(
+//               padding: const EdgeInsets.all(24.0),
+//               child: Column(
+//                 mainAxisSize: MainAxisSize.min,
+//                 children: [
+//                   const Icon(Icons.location_off_rounded,
+//                       size: 56, color: Colors.orange),
+//                   const SizedBox(height: 16),
+//                   Text(
+//                     _currentAddress != null
+//                         ? 'Pincode not resolved for location'
+//                         : 'Location Not Set',
+//                     style: const TextStyle(
+//                       fontSize: 16,
+//                       fontWeight: FontWeight.bold,
+//                       color: AppTheme.textDark,
+//                     ),
+//                   ),
+//                   const SizedBox(height: 8),
+//                   Text(
+//                     _currentAddress != null
+//                         ? 'We could not determine the delivery pincode for this location. Please select a location manually.'
+//                         : (_locationError ?? 'Please enable location services or select your location manually.'),
+//                     textAlign: TextAlign.center,
+//                     style: const TextStyle(fontSize: 13, color: AppTheme.textMuted),
+//                   ),
+//                   const SizedBox(height: 20),
+//                   ElevatedButton.icon(
+//                     onPressed: _openLocationPicker,
+//                     icon: const Icon(Icons.pin_drop_rounded),
+//                     label: const Text('Select Location'),
+//                     style: ElevatedButton.styleFrom(
+//                       backgroundColor: AppTheme.primary,
+//                       foregroundColor: Colors.white,
+//                     ),
+//                   ),
+//                 ],
+//               ),
+//             ),
+//           ),
+//         ),
+//       ];
+//     }
+//
+//     // Empty state when backend has no restaurants for the pincode (Case B & C)
+//     if (_allRestaurants == null || _allRestaurants!.isEmpty) {
+//       return [
+//         SliverFillRemaining(
+//           hasScrollBody: false,
+//           child: Center(
+//             child: Padding(
+//               padding: const EdgeInsets.all(24.0),
+//               child: Column(
+//                 mainAxisSize: MainAxisSize.min,
+//                 children: [
+//                   const Icon(Icons.storefront_outlined,
+//                       size: 56, color: Colors.grey),
+//                   const SizedBox(height: 16),
+//                   const Text(
+//                     'No restaurants available',
+//                     textAlign: TextAlign.center,
+//                     style: TextStyle(
+//                       fontSize: 16,
+//                       fontWeight: FontWeight.bold,
+//                       color: AppTheme.textDark,
+//                     ),
+//                   ),
+//                   const SizedBox(height: 8),
+//                   Text(
+//                     'There are no restaurants delivering to pincode $_selectedPincode at the moment.',
+//                     textAlign: TextAlign.center,
+//                     style: const TextStyle(fontSize: 13, color: AppTheme.textMuted),
+//                   ),
+//                   const SizedBox(height: 20),
+//                   OutlinedButton.icon(
+//                     onPressed: _openLocationPicker,
+//                     icon: const Icon(Icons.edit_location_alt),
+//                     label: const Text('Change Location'),
+//                   ),
+//                 ],
+//               ),
+//             ),
+//           ),
+//         ),
+//       ];
+//     }
+//
+//     // Filter restaurants by search query
+//     List<Restaurant> list = List.from(_allRestaurants!);
+//     if (_searchQuery.trim().isNotEmpty) {
+//       final q = _searchQuery.trim().toLowerCase();
+//       list = list.where((r) => r.name.toLowerCase().contains(q)).toList();
+//     }
+//
+//     // Separate Open and Closed restaurants
+//     final openRestaurants = list.where((r) => r.isOpenNow()).toList()
+//       ..sort((a, b) => a.sequence.compareTo(b.sequence));
+//
+//     final closedRestaurants = list.where((r) => !r.isOpenNow()).toList()
+//       ..sort((a, b) => a.sequence.compareTo(b.sequence));
+//
+//     // Top rated open restaurants (Rating >= 4.0, sorted by rating descending)
+//     final topRatedRestaurants = list
+//         .where((r) => r.rating >= 4.0)
+//         .toList()
+//       ..sort((a, b) {
+//         final aOpen = a.isOpenNow();
+//         final bOpen = b.isOpenNow();
+//         if (aOpen != bOpen) return aOpen ? -1 : 1;
+//         return b.rating.compareTo(a.rating);
+//       });
+//
+//     if (openRestaurants.isEmpty && closedRestaurants.isEmpty) {
+//       return [
+//         SliverFillRemaining(
+//           hasScrollBody: false,
+//           child: Center(
+//             child: Padding(
+//               padding: const EdgeInsets.all(24.0),
+//               child: Column(
+//                 mainAxisSize: MainAxisSize.min,
+//                 children: [
+//                   const Icon(Icons.search_off, size: 56, color: Colors.grey),
+//                   const SizedBox(height: 16),
+//                   Text(
+//                     'No restaurants found for "$_searchQuery"',
+//                     textAlign: TextAlign.center,
+//                     style: const TextStyle(
+//                         fontSize: 15, color: AppTheme.textMuted),
+//                   ),
+//                 ],
+//               ),
+//             ),
+//           ),
+//         ),
+//       ];
+//     }
+//
+//     return [
+//       // 1. TOP RATED Section
+//       if (topRatedRestaurants.isNotEmpty)
+//         _padSliver(
+//           SliverToBoxAdapter(
+//             child: Column(
+//               crossAxisAlignment: CrossAxisAlignment.start,
+//               children: [
+//                 const SizedBox(height: 8),
+//                 const Text(
+//                   'Top Rated',
+//                   style: TextStyle(
+//                     fontSize: 18,
+//                     fontWeight: FontWeight.bold,
+//                     color: AppTheme.textDark,
+//                   ),
+//                 ),
+//                 const SizedBox(height: 10),
+//                 SizedBox(
+//                   height: 180,
+//                   child: ListView.builder(
+//                     scrollDirection: Axis.horizontal,
+//                     itemCount: topRatedRestaurants.length,
+//                     itemBuilder: (context, index) {
+//                       final restaurant = topRatedRestaurants[index];
+//                       return _buildTopRatedCard(restaurant);
+//                     },
+//                   ),
+//                 ),
+//                 const SizedBox(height: 20),
+//               ],
+//             ),
+//           ),
+//         ),
+//
+//       // 2. Restaurants to Explore Section
+//       if (openRestaurants.isNotEmpty) ...[
+//         _padSliver(
+//           const SliverToBoxAdapter(
+//             child: Column(
+//               crossAxisAlignment: CrossAxisAlignment.start,
+//               children: [
+//                 Text(
+//                   'Restaurants to explore',
+//                   style: TextStyle(
+//                     fontSize: 18,
+//                     fontWeight: FontWeight.bold,
+//                     color: AppTheme.textDark,
+//                   ),
+//                 ),
+//                 SizedBox(height: 2),
+//                 Text(
+//                   'Featured Restaurants',
+//                   style: TextStyle(
+//                     fontSize: 12,
+//                     color: AppTheme.textMuted,
+//                   ),
+//                 ),
+//                 SizedBox(height: 12),
+//               ],
+//             ),
+//           ),
+//         ),
+//         _padSliver(
+//           SliverList(
+//             delegate: SliverChildBuilderDelegate(
+//                   (context, index) {
+//                 final restaurant = openRestaurants[index];
+//                 return RestaurantCard(
+//                   restaurant: restaurant,
+//                   userLat: _currentAddress?.latitude,
+//                   userLng: _currentAddress?.longitude,
+//                   onTap: () => _onRestaurantSelected(restaurant),
+//                 );
+//               },
+//               childCount: openRestaurants.length,
+//             ),
+//           ),
+//         ),
+//       ],
+//
+//       // 3. Closed for Delivery Section
+//       if (closedRestaurants.isNotEmpty) ...[
+//         _padSliver(
+//           const SliverToBoxAdapter(
+//             child: Column(
+//               crossAxisAlignment: CrossAxisAlignment.start,
+//               children: [
+//                 SizedBox(height: 16),
+//                 Text(
+//                   'Closed for Delivery',
+//                   style: TextStyle(
+//                     fontSize: 18,
+//                     fontWeight: FontWeight.bold,
+//                     color: AppTheme.textDark,
+//                   ),
+//                 ),
+//                 SizedBox(height: 12),
+//               ],
+//             ),
+//           ),
+//         ),
+//         _padSliver(
+//           SliverList(
+//             delegate: SliverChildBuilderDelegate(
+//                   (context, index) {
+//                 final restaurant = closedRestaurants[index];
+//                 return RestaurantCard(
+//                   restaurant: restaurant,
+//                   userLat: _currentAddress?.latitude,
+//                   userLng: _currentAddress?.longitude,
+//                   onTap: () => _onRestaurantSelected(restaurant),
+//                 );
+//               },
+//               childCount: closedRestaurants.length,
+//             ),
+//           ),
+//         ),
+//       ],
+//
+//       // Bottom breathing space
+//       const SliverToBoxAdapter(child: SizedBox(height: 16)),
+//     ];
+//   }
+//
+//   /// Blank area + small API logo, used when a restaurant has no banner.
+//   Widget _buildTopRatedNoBanner(String logoUrl) {
+//     return Container(
+//       width: double.infinity,
+//       height: double.infinity,
+//       color: const Color(0xFFF2F4F7),
+//       child: Center(
+//         child: logoUrl.isNotEmpty
+//             ? Container(
+//           width: 46,
+//           height: 46,
+//           decoration: const BoxDecoration(
+//             shape: BoxShape.circle,
+//             color: Colors.white,
+//           ),
+//           child: ClipOval(
+//             child: Image.network(
+//               logoUrl,
+//               fit: BoxFit.cover,
+//               errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+//             ),
+//           ),
+//         )
+//             : const SizedBox.shrink(),
+//       ),
+//     );
+//   }
+//
+//   /// Small Portrait Card for Top Rated Section
+//   Widget _buildTopRatedCard(Restaurant restaurant) {
+//     final bannerUrls = restaurant.getFullBannerUrls();
+//     final logoUrl = restaurant.getFullLogoUrl();
+//     final noBanner = _buildTopRatedNoBanner(logoUrl);
+//     final isOpen = restaurant.isOpenNow();
+//
+//     Widget image = bannerUrls.isNotEmpty
+//         ? Image.network(
+//       bannerUrls.first,
+//       fit: BoxFit.cover,
+//       width: double.infinity,
+//       height: double.infinity,
+//       errorBuilder: (_, __, ___) => noBanner,
+//     )
+//         : noBanner;
+//
+//     // Closed restaurants: greyscale image
+//     if (!isOpen) {
+//       image = ColorFiltered(
+//         colorFilter: const ColorFilter.matrix(<double>[
+//           0.2126, 0.7152, 0.0722, 0, 0,
+//           0.2126, 0.7152, 0.0722, 0, 0,
+//           0.2126, 0.7152, 0.0722, 0, 0,
+//           0, 0, 0, 1, 0,
+//         ]),
+//         child: image,
+//       );
+//     }
+//
+//     return Container(
+//       width: 130,
+//       margin: const EdgeInsets.only(right: 12),
+//       decoration: BoxDecoration(
+//         color: AppTheme.surface,
+//         borderRadius: BorderRadius.circular(14),
+//         border: Border.all(color: AppTheme.chipUnselected),
+//         boxShadow: const [
+//           BoxShadow(
+//             color: Color(0x0A000000),
+//             blurRadius: 6,
+//             offset: Offset(0, 2),
+//           ),
+//         ],
+//       ),
+//       child: InkWell(
+//         onTap: () => _onRestaurantSelected(restaurant),
+//         borderRadius: BorderRadius.circular(14),
+//         child: Column(
+//           crossAxisAlignment: CrossAxisAlignment.start,
+//           children: [
+//             // Image with Heart Icon
+//             Stack(
+//               children: [
+//                 SizedBox(
+//                   height: 100,
+//                   width: double.infinity,
+//                   child: ClipRRect(
+//                     borderRadius:
+//                     const BorderRadius.vertical(top: Radius.circular(14)),
+//                     child: image,
+//                   ),
+//                 ),
+//                 if (!isOpen)
+//                   Positioned.fill(
+//                     child: Container(
+//                       decoration: BoxDecoration(
+//                         color: Colors.black.withOpacity(0.55),
+//                         borderRadius: const BorderRadius.vertical(
+//                             top: Radius.circular(14)),
+//                       ),
+//                     ),
+//                   ),
+//                 if (!isOpen)
+//                   Positioned(
+//                     left: 8,
+//                     right: 8,
+//                     bottom: 6,
+//                     child: Text(
+//                       restaurant.openingText(),
+//                       maxLines: 2,
+//                       overflow: TextOverflow.ellipsis,
+//                       style: const TextStyle(
+//                         color: Colors.white,
+//                         fontSize: 10,
+//                         fontWeight: FontWeight.w600,
+//                       ),
+//                     ),
+//                   ),
+//                 Positioned(
+//                   top: 6,
+//                   right: 6,
+//                   child: Container(
+//                     padding: const EdgeInsets.all(4),
+//                     decoration: BoxDecoration(
+//                       color: Colors.white.withOpacity(0.85),
+//                       shape: BoxShape.circle,
+//                     ),
+//                     child: const Icon(
+//                       Icons.favorite_border,
+//                       size: 14,
+//                       color: AppTheme.textDark,
+//                     ),
+//                   ),
+//                 ),
+//               ],
+//             ),
+//
+//             // Text Info
+//             Padding(
+//               padding: const EdgeInsets.all(8.0),
+//               child: Column(
+//                 crossAxisAlignment: CrossAxisAlignment.start,
+//                 children: [
+//                   Row(
+//                     children: [
+//                       Expanded(
+//                         child: Text(
+//                           restaurant.name,
+//                           maxLines: 1,
+//                           overflow: TextOverflow.ellipsis,
+//                           style: TextStyle(
+//                             fontSize: 13,
+//                             fontWeight: FontWeight.bold,
+//                             color: isOpen
+//                                 ? AppTheme.textDark
+//                                 : AppTheme.textMuted,
+//                           ),
+//                         ),
+//                       ),
+//                       const SizedBox(width: 4),
+//                       Container(
+//                         padding: const EdgeInsets.all(1.5),
+//                         decoration: BoxDecoration(
+//                           border: Border.all(
+//                             color: restaurant.isVegetarian
+//                                 ? AppTheme.openGreen
+//                                 : AppTheme.closedRed,
+//                             width: 1,
+//                           ),
+//                           borderRadius: BorderRadius.circular(3),
+//                         ),
+//                         child: Icon(
+//                           Icons.circle,
+//                           size: 5,
+//                           color: restaurant.isVegetarian
+//                               ? AppTheme.openGreen
+//                               : AppTheme.closedRed,
+//                         ),
+//                       ),
+//                     ],
+//                   ),
+//                   const SizedBox(height: 4),
+//
+//                   // Rating Badge
+//                   Row(
+//                     children: [
+//                       Container(
+//                         padding: const EdgeInsets.symmetric(
+//                             horizontal: 5, vertical: 2),
+//                         decoration: BoxDecoration(
+//                           color:
+//                           isOpen ? AppTheme.openGreen : AppTheme.textMuted,
+//                           borderRadius: BorderRadius.circular(4),
+//                         ),
+//                         child: Row(
+//                           mainAxisSize: MainAxisSize.min,
+//                           children: [
+//                             Text(
+//                               restaurant.rating.toStringAsFixed(1),
+//                               style: const TextStyle(
+//                                 color: Colors.white,
+//                                 fontSize: 10,
+//                                 fontWeight: FontWeight.bold,
+//                               ),
+//                             ),
+//                             const SizedBox(width: 2),
+//                             const Icon(Icons.star,
+//                                 size: 9, color: Colors.white),
+//                           ],
+//                         ),
+//                       ),
+//                     ],
+//                   ),
+//                 ],
+//               ),
+//             ),
+//           ],
+//         ),
+//       ),
+//     );
+//   }
+// }
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/restaurant.dart';
+import '../repositories/restaurant_repository.dart';
 import '../services/location_service.dart';
-import '../services/restaurant_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/restaurant_card.dart';
+import '../widgets/restaurant_skeleton.dart';
+import 'closed_restaurant_screen.dart';
+import 'contact_us_screen.dart';
 import 'location_picker_screen.dart';
 import 'webview_screen.dart';
+
+/// Keeps the search bar pinned at the top of the screen once the orange
+/// header has scrolled away. While pinned (content scrolling underneath)
+/// it gets the orange colour, so it looks like the new app bar.
+class _SearchHeaderDelegate extends SliverPersistentHeaderDelegate {
+  final Widget child;
+  final double height;
+  final Color pinnedColor;
+
+  _SearchHeaderDelegate({
+    required this.child,
+    required this.height,
+    required this.pinnedColor,
+  });
+
+  @override
+  double get minExtent => height;
+
+  @override
+  double get maxExtent => height;
+
+  @override
+  Widget build(
+      BuildContext context,
+      double shrinkOffset,
+      bool overlapsContent,
+      ) {
+    return Container(
+      height: height,
+      color: overlapsContent ? pinnedColor : Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+      child: child,
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _SearchHeaderDelegate oldDelegate) => true;
+}
 
 class RestaurantSelectionScreen extends StatefulWidget {
   const RestaurantSelectionScreen({super.key});
@@ -17,36 +1208,22 @@ class RestaurantSelectionScreen extends StatefulWidget {
 
 class _RestaurantSelectionScreenState extends State<RestaurantSelectionScreen>
     with WidgetsBindingObserver {
-  static const Color _brand = Color(0xFF80CC00);
-  static const Color _brandDark = Color(0xFF4E9A00);
-  static const Color _brandSoft = Color(0xFFEAF5DD);
-  static const Color _textDark = Color(0xFF1C1C1E);
+  Timer? _statusUpdateTimer;
 
-  static const double _headerHeight = 260;
-  static const double _sheetTop = 200;
-  static const double _logoSize = 64;
-
-  static const Duration _autoRefreshInterval = Duration(seconds: 10);
-
-  Timer? _autoRefreshTimer;
-  bool _isSilentRefreshing = false;
-
-  List<Restaurant>? _restaurants;
+  List<Restaurant>? _allRestaurants;
   bool _isLoading = true;
   String? _errorMessage;
 
   LocationAddress? _currentAddress;
   String? _selectedPincode;
   bool _isLocationDetecting = false;
+  String? _locationError;
 
-  // Applied filter: 'all', '1' (Veg), '0' (Non-Veg)
-  String _selectedVegFilter = 'all';
+  // Filter & Search states
+  String _selectedVegFilter = 'all'; // 'all', '1' (Veg), '0' (Non-Veg)
+  String _searchQuery = '';
 
-  // Filter popup state
-  final LayerLink _filterLink = LayerLink();
-  OverlayEntry? _filterOverlay;
-  bool _isFilterOpen = false;
-  String _pendingVegFilter = 'all'; // choice inside the popup (before Apply)
+  final TextEditingController _searchController = TextEditingController();
 
   StreamSubscription<Position>? _positionSubscription;
 
@@ -55,38 +1232,26 @@ class _RestaurantSelectionScreenState extends State<RestaurantSelectionScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initLocationAndLoadData();
-    _startAutoRefresh();
+    _startStatusUpdateTimer();
   }
 
-  // ---------- Silent auto update ----------
-
-  void _startAutoRefresh() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) {
-      _silentRefresh();
+  /// Timer that re-evaluates Open/Closed statuses every 5 seconds
+  void _startStatusUpdateTimer() {
+    _statusUpdateTimer?.cancel();
+    _statusUpdateTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (mounted && _allRestaurants != null) {
+        setState(() {
+          // Triggers rebuild to re-evaluate isOpenNow() and move restaurants between Open & Closed
+        });
+      }
     });
-  }
-
-  void _stopAutoRefresh() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = null;
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _silentRefresh();
-      _startAutoRefresh();
-    } else if (state == AppLifecycleState.paused) {
-      _stopAutoRefresh();
+      _initLocationAndLoadData();
     }
-  }
-
-  String _signature(List<Restaurant> list) {
-    return list
-        .map((r) =>
-    '${r.id}|${r.name}|${r.url}|${r.pincode}|${r.isVeg}|${r.latitude}|${r.longitude}')
-        .join(';;');
   }
 
   String? _getVegParam() {
@@ -95,39 +1260,11 @@ class _RestaurantSelectionScreenState extends State<RestaurantSelectionScreen>
     return null;
   }
 
-  Future<void> _silentRefresh() async {
-    if (_isLoading || _isSilentRefreshing) return;
-    _isSilentRefreshing = true;
-
-    try {
-      final list = await RestaurantService.fetchRestaurants(
-        pincode: _selectedPincode,
-        isVeg: _getVegParam(),
-      );
-      if (!mounted) return;
-
-      final oldList = _restaurants;
-      final changed =
-          oldList == null || _signature(oldList) != _signature(list);
-
-      if (changed) {
-        setState(() {
-          _restaurants = list;
-          _errorMessage = null;
-        });
-      }
-    } catch (_) {
-      // Silent error ignore
-    } finally {
-      _isSilentRefreshing = false;
-    }
-  }
-
   Future<void> _initLocationAndLoadData() async {
+    if (!mounted) return;
     setState(() {
-      _isLoading = true;
-      _errorMessage = null;
       _isLocationDetecting = true;
+      _locationError = null;
     });
 
     try {
@@ -137,18 +1274,33 @@ class _RestaurantSelectionScreenState extends State<RestaurantSelectionScreen>
           pos.latitude,
           pos.longitude,
         );
-        if (addr != null) {
-          _currentAddress = addr;
-          if (addr.pincode.isNotEmpty) {
-            _selectedPincode = addr.pincode;
-          } else {
+        debugPrint('LOCATION DETECTED: addr=${addr?.address} pincode=${addr?.pincode}');
+        if (mounted) {
+          setState(() {
+            _currentAddress = addr;
+            if (addr != null && addr.pincode.isNotEmpty) {
+              _selectedPincode = addr.pincode;
+            } else {
+              _selectedPincode = null;
+            }
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _locationError = 'GPS location disabled or permission denied';
             _selectedPincode = null;
-          }
-          debugPrint('Detected location: ${addr.address}, pincode: ${_selectedPincode ?? "None"}');
+          });
         }
       }
     } catch (e) {
       debugPrint('Location detection error: $e');
+      if (mounted) {
+        setState(() {
+          _locationError = 'Unable to detect location automatically';
+          _selectedPincode = null;
+        });
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -162,26 +1314,39 @@ class _RestaurantSelectionScreenState extends State<RestaurantSelectionScreen>
 
   Future<void> _fetchRestaurantList() async {
     if (!mounted) return;
+
+    // Case E: If pincode is null or empty, do not fetch with empty pincode or show all restaurants
+    if (_selectedPincode == null || _selectedPincode!.trim().isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _allRestaurants = [];
+        _errorMessage = null;
+      });
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
-      final list = await RestaurantService.fetchRestaurants(
+      final list = await RestaurantRepository.getRestaurants(
         pincode: _selectedPincode,
         isVeg: _getVegParam(),
       );
       if (!mounted) return;
+
       setState(() {
-        _restaurants = list;
+        _allRestaurants = list;
         _isLoading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
+        _allRestaurants = null;
         _errorMessage =
-        'Unable to load restaurants. Please check your connection.';
+        'Unable to load restaurants. Please check your connection and retry.';
         _isLoading = false;
       });
     }
@@ -201,10 +1366,19 @@ class _RestaurantSelectionScreenState extends State<RestaurantSelectionScreen>
       setState(() {
         _currentAddress = selected;
         _selectedPincode =
-            selected.pincode.isNotEmpty ? selected.pincode : null;
+        selected.pincode.isNotEmpty ? selected.pincode : null;
+        _locationError = null;
       });
       await _fetchRestaurantList();
     }
+  }
+
+  /// Opens the Contact Us screen (back arrow there pops to this screen).
+  void _openContactUs() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ContactUsScreen()),
+    );
   }
 
   void _onFilterChanged(String filterValue) {
@@ -215,218 +1389,53 @@ class _RestaurantSelectionScreenState extends State<RestaurantSelectionScreen>
     _fetchRestaurantList();
   }
 
-  // ---------- Filter popup ----------
-
-  void _openFilterPopup() {
-    if (_filterOverlay != null) return;
-    _pendingVegFilter = _selectedVegFilter;
-
-    _filterOverlay = OverlayEntry(builder: _buildFilterPopup);
-    Overlay.of(context).insert(_filterOverlay!);
-    setState(() => _isFilterOpen = true);
-  }
-
-  void _closeFilterPopup() {
-    _filterOverlay?.remove();
-    _filterOverlay = null;
-    if (mounted) {
-      setState(() => _isFilterOpen = false);
-    }
-  }
-
-  void _applyFilter() {
-    final value = _pendingVegFilter;
-    _closeFilterPopup();
-    _onFilterChanged(value);
-  }
-
-  Widget _buildFilterPopup(BuildContext overlayContext) {
-    return Stack(
-      children: [
-        // Soft dim background. Tap anywhere to close.
-        Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _closeFilterPopup,
-            child: Container(color: Colors.white.withAlpha(120)),
-          ),
-        ),
-        CompositedTransformFollower(
-          link: _filterLink,
-          showWhenUnlinked: false,
-          targetAnchor: Alignment.bottomRight,
-          followerAnchor: Alignment.topRight,
-          offset: const Offset(0, 8),
-          child: Material(
-            color: Colors.white,
-            elevation: 10,
-            shadowColor: Colors.black38,
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              width: 220,
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Restaurant Type',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: _textDark,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  _buildFilterOption(
-                    label: 'All',
-                    value: 'all',
-                    leading: const Icon(Icons.restaurant_menu,
-                        size: 16, color: _brandDark),
-                  ),
-                  _buildFilterOption(
-                    label: 'Veg',
-                    value: '1',
-                    leading: Icon(Icons.circle,
-                        size: 12, color: Colors.green.shade700),
-                  ),
-                  _buildFilterOption(
-                    label: 'Non-Veg',
-                    value: '0',
-                    leading: Icon(Icons.change_history,
-                        size: 14, color: Colors.red.shade700),
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _applyFilter,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _brand,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        'Apply',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFilterOption({
-    required String label,
-    required String value,
-    required Widget leading,
-  }) {
-    final bool selected = _pendingVegFilter == value;
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: () {
-        _pendingVegFilter = value;
-        _filterOverlay?.markNeedsBuild();
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 9),
-        child: Row(
-          children: [
-            Container(
-              width: 20,
-              height: 20,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: selected ? _brand : Colors.grey.shade400,
-                  width: 1.8,
-                ),
-              ),
-              child: selected
-                  ? Center(
-                child: Container(
-                  width: 10,
-                  height: 10,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _brand,
-                  ),
-                ),
-              )
-                  : null,
-            ),
-            const SizedBox(width: 10),
-            SizedBox(width: 18, child: Center(child: leading)),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                color: _textDark,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _onRestaurantSelected(Restaurant restaurant) {
-    final rawUrl = restaurant.url.trim();
+    if (restaurant.isOpenNow()) {
+      final rawUrl = restaurant.url.trim();
 
-    if (rawUrl.isEmpty) {
-      _showErrorSnackBar('Invalid restaurant URL.');
-      return;
-    }
+      if (rawUrl.isEmpty) {
+        _showErrorSnackBar('Invalid restaurant menu link.');
+        return;
+      }
 
-    final uri = Uri.tryParse(rawUrl);
-    if (uri == null || (!uri.hasScheme && !rawUrl.contains('.'))) {
-      _showErrorSnackBar('Invalid URL format for ${restaurant.name}.');
-      return;
-    }
+      final formattedUrl =
+      (rawUrl.startsWith('http://') || rawUrl.startsWith('https://'))
+          ? rawUrl
+          : 'https://$rawUrl';
 
-    final formattedUrl =
-    (rawUrl.startsWith('http://') || rawUrl.startsWith('https://'))
-        ? rawUrl
-        : 'https://$rawUrl';
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => WebViewScreen(
-          initialUrl: formattedUrl,
-          selectedRestaurant: restaurant,
-          restaurants: _restaurants,
-          pincode: _selectedPincode,
-          isVeg: _getVegParam(),
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => WebViewScreen(
+            initialUrl: formattedUrl,
+            selectedRestaurant: restaurant,
+            restaurants: _allRestaurants,
+            pincode: _selectedPincode,
+            isVeg: _getVegParam(),
+          ),
         ),
-      ),
-    );
+      );
+    } else {
+      // Closed restaurant: Open Closed Details Screen with live countdown
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ClosedRestaurantScreen(
+            restaurant: restaurant,
+            allRestaurants: _allRestaurants,
+          ),
+        ),
+      ).then((_) {
+        if (mounted) setState(() {});
+      });
+    }
   }
 
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.red.shade700,
+        backgroundColor: AppTheme.closedRed,
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -434,636 +1443,881 @@ class _RestaurantSelectionScreenState extends State<RestaurantSelectionScreen>
 
   @override
   void dispose() {
-    _filterOverlay?.remove();
-    _filterOverlay = null;
-    _stopAutoRefresh();
+    _statusUpdateTimer?.cancel();
+    _searchController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _positionSubscription?.cancel();
     super.dispose();
   }
 
-  // ------------------------------- UI ---------------------------------
+  // =====================================================
+  // BUILD
+  // =====================================================
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            height: _headerHeight,
-            child: _buildHeader(),
-          ),
-          Column(
-            children: [
-              const SizedBox(height: _sheetTop),
-              Expanded(child: _buildSheet()),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
     final double topPad = MediaQuery.of(context).padding.top;
 
-    return SizedBox(
-      height: _headerHeight + topPad * 0,
-      width: double.infinity,
-      child: Stack(
-        children: [
-          // Gradient background
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Color(0xFF6CBF0A), Color(0xFF9BD93C)],
-                ),
-              ),
-            ),
-          ),
-          // Faint map lines
-          Positioned.fill(
-            child: CustomPaint(painter: _MapLinesPainter()),
-          ),
-          // Fade-out toward the bottom
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  stops: const [0.35, 1.0],
-                  colors: [
-                    Colors.white.withAlpha(0),
-                    Colors.white.withAlpha(110),
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        top: false,
+        child: Stack(
+          children: [
+            // Everything scrolls inside ONE scroll view:
+            //   header (scrolls away) -> search bar (PINS at top) ->
+            //   filter chips (scroll away) -> restaurants.
+            Padding(
+              padding: EdgeInsets.only(top: topPad),
+              child: RefreshIndicator(
+                onRefresh: _initLocationAndLoadData,
+                color: AppTheme.primary,
+                child: CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    // 1. ORANGE HEADER - scrolls away
+                    SliverToBoxAdapter(child: _buildHeader()),
+
+                    // 2. SEARCH BAR - stays pinned at the top
+                    SliverPersistentHeader(
+                      pinned: true,
+                      delegate: _SearchHeaderDelegate(
+                        height: 64,
+                        pinnedColor: AppTheme.primaryDark,
+                        child: _buildSearchBar(),
+                      ),
+                    ),
+
+                    // 3. FILTER CHIPS - scroll away
+                    SliverToBoxAdapter(child: _buildFilterChips()),
+
+                    // 4. RESTAURANTS - keep scrolling
+                    ..._buildContentSlivers(),
                   ],
                 ),
               ),
             ),
-          ),
-          // Title + subtitle
-          Positioned(
-            top: topPad + 16,
-            left: 0,
-            right: 0,
-            child: const Column(
-              children: [
-                Text(
-                  'Select Restaurant',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Choose your nearest location & menu',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-              ],
+
+            // Solid orange strip behind the status bar (time, signal,
+            // battery), always visible, so pinned search bar looks like
+            // an app bar.
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: topPad,
+              child: Container(color: AppTheme.primaryDark),
             ),
-          ),
-          // Map pin
-          Positioned(
-            top: topPad + 90,
-            left: 0,
-            right: 0,
-            child: const Center(child: _MapPin()),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSheet() {
-    return Material(
-      color: Colors.white,
-      elevation: 6,
-      shadowColor: Colors.black26,
-      clipBehavior: Clip.antiAlias,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      child: SizedBox.expand(
-        child: Column(
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 42,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 10),
-
-            // Location bar + filter button in the same row
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(child: _buildLocationBar()),
-                  const SizedBox(width: 10),
-                  _buildFilterButton(),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 14),
-
-            Expanded(child: _buildContent()),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildLocationBar() {
-    final hasAddress = _currentAddress != null;
-    final addressText =
-    hasAddress ? _currentAddress!.address : 'All Locations';
-    final pincodeText = _selectedPincode != null && _selectedPincode!.isNotEmpty
-        ? 'Pincode: $_selectedPincode'
-        : (hasAddress ? 'Pincode: Not Detected' : 'All Pincodes');
+  // =====================================================
+  // HEADER (title + location)
+  // =====================================================
+
+  Widget _buildHeader() {
+    String addressText;
+    String pincodeText;
+
+    if (_isLocationDetecting && _currentAddress == null) {
+      addressText = 'Getting your location...';
+      pincodeText = 'Please wait...';
+    } else if (_currentAddress != null) {
+      addressText = _currentAddress!.address;
+      pincodeText = _selectedPincode != null && _selectedPincode!.isNotEmpty
+          ? 'Pincode: $_selectedPincode'
+          : 'Pincode unresolved (Tap Change)';
+    } else {
+      addressText = _locationError ?? 'Location not available';
+      pincodeText = 'Tap Change to set location';
+    }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF6F8F3),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.green.shade100, width: 1),
+      padding: const EdgeInsets.only(
+        top: 6,
+        left: 16,
+        right: 16,
+        bottom: 12,
       ),
-      child: Row(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [AppTheme.primaryDark, AppTheme.primary],
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.location_on, color: _brandDark, size: 22),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
+          // Row 1: App Title + Contact action
+          Row(
+            children: [
+              const Icon(Icons.restaurant_menu, color: Colors.white, size: 22),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'NEXDROP',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: _openContactUs,
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text(
+                  'Contact',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Row 2: Location icon + Address & Pincode + "Change" pill button
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const Icon(Icons.location_on, color: Colors.white, size: 20),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Flexible(
-                      child: Text(
-                        addressText,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: _textDark,
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            addressText,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
                         ),
+                        if (_isLocationDetecting) ...[
+                          const SizedBox(width: 6),
+                          const SizedBox(
+                            width: 10,
+                            height: 10,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.5,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    Text(
+                      pincodeText,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.white70,
                       ),
                     ),
-                    if (_isLocationDetecting) ...[
-                      const SizedBox(width: 6),
-                      const SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 1.5,
-                          color: _brand,
-                        ),
-                      ),
-                    ],
                   ],
                 ),
-                Text(
-                  pincodeText,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade700,
-                    fontWeight: FontWeight.w500,
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton(
+                onPressed: _openLocationPicker,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.white, width: 1.2),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
                   ),
                 ),
-              ],
-            ),
-          ),
-          InkWell(
-            onTap: _openLocationPicker,
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _brand, width: 1),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.edit_location_alt, size: 14, color: _brandDark),
-                  SizedBox(width: 4),
-                  Text(
-                    'Change',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.bold,
-                      color: _brandDark,
-                    ),
+                child: const Text(
+                  'Change',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
                   ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildFilterButton() {
-    // Highlight the button when the popup is open or a filter is applied.
-    final bool highlighted = _isFilterOpen || _selectedVegFilter != 'all';
+  // =====================================================
+  // SEARCH BAR & FILTER CHIPS
+  // =====================================================
 
-    return CompositedTransformTarget(
-      link: _filterLink,
-      child: GestureDetector(
-        onTap: _isFilterOpen ? _closeFilterPopup : _openFilterPopup,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: _brandSoft,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: highlighted ? _brand : Colors.transparent,
-              width: 1.5,
-            ),
-          ),
-          child: const Icon(
-            Icons.filter_alt_outlined,
-            size: 24,
-            color: _brandDark,
-          ),
+  Widget _buildSearchBar() {
+    return Container(
+      height: 42,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF2F4F7),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: TextField(
+        controller: _searchController,
+        onChanged: (val) {
+          setState(() => _searchQuery = val);
+        },
+        decoration: InputDecoration(
+          hintText: 'Search for restaurants...',
+          hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+          prefixIcon:
+          const Icon(Icons.search, size: 20, color: AppTheme.primaryDark),
+          suffixIcon: _searchQuery.isNotEmpty
+              ? IconButton(
+            icon: const Icon(Icons.clear, size: 18),
+            onPressed: () {
+              _searchController.clear();
+              setState(() => _searchQuery = '');
+            },
+          )
+              : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 10),
         ),
       ),
     );
   }
 
-  Widget _buildContent() {
-    if (_isLoading) {
-      return const Center(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(color: _brand),
-              SizedBox(height: 16),
-              Text(
-                'Searching restaurants...',
-                style: TextStyle(fontSize: 15, color: Colors.grey),
-              ),
-            ],
+  Widget _buildFilterChips() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Row(
+        children: [
+          _buildChip(
+            label: 'All',
+            isSelected: _selectedVegFilter == 'all',
+            onTap: () => _onFilterChanged('all'),
           ),
+          const SizedBox(width: 8),
+          _buildChip(
+            label: 'Veg',
+            isSelected: _selectedVegFilter == '1',
+            onTap: () => _onFilterChanged('1'),
+            icon: Icons.circle,
+            iconColor: AppTheme.openGreen,
+          ),
+          const SizedBox(width: 8),
+          _buildChip(
+            label: 'Non-Veg',
+            isSelected: _selectedVegFilter == '0',
+            onTap: () => _onFilterChanged('0'),
+            icon: Icons.change_history,
+            iconColor: AppTheme.closedRed,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChip({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+    IconData? icon,
+    Color? iconColor,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.primary : AppTheme.chipUnselected,
+          borderRadius: BorderRadius.circular(20),
         ),
-      );
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(
+                icon,
+                size: 10,
+                color: isSelected
+                    ? Colors.white
+                    : (iconColor ?? AppTheme.textDark),
+              ),
+              const SizedBox(width: 5),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: isSelected ? Colors.white : AppTheme.textDark,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // =====================================================
+  // CONTENT (as slivers, so everything scrolls together)
+  // =====================================================
+
+  Widget _padSliver(Widget sliver) {
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      sliver: sliver,
+    );
+  }
+
+  List<Widget> _buildContentSlivers() {
+    if (_isLocationDetecting || _isLoading) {
+      return [
+        const SliverFillRemaining(
+          child: RestaurantSkeleton(),
+        ),
+      ];
     }
 
     if (_errorMessage != null) {
-      return Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.wifi_off_rounded,
-                  size: 64, color: Colors.orange),
-              const SizedBox(height: 16),
-              Text(
-                _errorMessage!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 16, color: Colors.black87),
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: _fetchRestaurantList,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Retry'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _brand,
-                  foregroundColor: Colors.white,
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (_restaurants == null || _restaurants!.isEmpty) {
-      final pincodeInfo = _selectedPincode != null
-          ? 'in pincode $_selectedPincode'
-          : 'for this selection';
-      final filterName = _selectedVegFilter == '1'
-          ? 'Veg'
-          : (_selectedVegFilter == '0' ? 'Non-Veg' : '');
-
-      return Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.storefront_outlined,
-                  size: 60, color: Colors.grey),
-              const SizedBox(height: 16),
-              Text(
-                'No $filterName restaurants found $pincodeInfo.',
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 15, color: Colors.grey),
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 8,
-                runSpacing: 8,
+      return [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (_selectedVegFilter != 'all')
-                    ElevatedButton(
-                      onPressed: () => _onFilterChanged('all'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _brand,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('Show All Veg & Non-Veg'),
-                    ),
-                  OutlinedButton(
-                    onPressed: _openLocationPicker,
-                    child: const Text('Change Location'),
+                  const Icon(Icons.wifi_off_rounded,
+                      size: 56, color: Colors.orange),
+                  const SizedBox(height: 16),
+                  Text(
+                    _errorMessage!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 15, color: AppTheme.textDark),
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton.icon(
+                    onPressed: _fetchRestaurantList,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
                   ),
                 ],
               ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    final restaurants = _restaurants!;
-
-    return Column(
-      children: [
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: _fetchRestaurantList,
-            color: _brand,
-            child: ListView.builder(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 2, 16, 16),
-              itemCount: restaurants.length,
-              itemBuilder: (context, i) {
-                return _buildRestaurantCard(restaurants[i]);
-              },
             ),
           ),
         ),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-            child: _buildFooterBanner(),
+      ];
+    }
+
+    // Unresolved location or missing pincode state (Case E)
+    if (_selectedPincode == null || _selectedPincode!.trim().isEmpty) {
+      return [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.location_off_rounded,
+                      size: 56, color: Colors.orange),
+                  const SizedBox(height: 16),
+                  Text(
+                    _currentAddress != null
+                        ? 'Pincode not resolved for location'
+                        : 'Location Not Set',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.textDark,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _currentAddress != null
+                        ? 'We could not determine the delivery pincode for this location. Please select a location manually.'
+                        : (_locationError ?? 'Please enable location services or select your location manually.'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 13, color: AppTheme.textMuted),
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton.icon(
+                    onPressed: _openLocationPicker,
+                    icon: const Icon(Icons.pin_drop_rounded),
+                    label: const Text('Select Location'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
+
+    // Empty state when backend has no restaurants for the pincode (Case B & C)
+    if (_allRestaurants == null || _allRestaurants!.isEmpty) {
+      return [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.storefront_outlined,
+                      size: 56, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'No restaurants available',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.textDark,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'There are no restaurants delivering to pincode $_selectedPincode at the moment.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 13, color: AppTheme.textMuted),
+                  ),
+                  const SizedBox(height: 20),
+                  OutlinedButton.icon(
+                    onPressed: _openLocationPicker,
+                    icon: const Icon(Icons.edit_location_alt),
+                    label: const Text('Change Location'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
+
+    // Filter restaurants by search query
+    List<Restaurant> list = List.from(_allRestaurants!);
+    if (_searchQuery.trim().isNotEmpty) {
+      final q = _searchQuery.trim().toLowerCase();
+      list = list.where((r) => r.name.toLowerCase().contains(q)).toList();
+    }
+
+    // Separate Open and Closed restaurants
+    final openRestaurants = list.where((r) => r.isOpenNow()).toList()
+      ..sort((a, b) => a.sequence.compareTo(b.sequence));
+
+    final closedRestaurants = list.where((r) => !r.isOpenNow()).toList()
+      ..sort((a, b) => a.sequence.compareTo(b.sequence));
+
+    // Top rated open restaurants (Rating >= 4.0, sorted by rating descending)
+    final topRatedRestaurants = list
+        .where((r) => r.rating >= 4.0)
+        .toList()
+      ..sort((a, b) {
+        final aOpen = a.isOpenNow();
+        final bOpen = b.isOpenNow();
+        if (aOpen != bOpen) return aOpen ? -1 : 1;
+        return b.rating.compareTo(a.rating);
+      });
+
+    if (openRestaurants.isEmpty && closedRestaurants.isEmpty) {
+      return [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.search_off, size: 56, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No restaurants found for "$_searchQuery"',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 15, color: AppTheme.textMuted),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
+
+    return [
+      // 1. TOP RATED Section
+      if (topRatedRestaurants.isNotEmpty)
+        _padSliver(
+          SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 8),
+                const Text(
+                  'Top Rated',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 180,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: topRatedRestaurants.length,
+                    itemBuilder: (context, index) {
+                      final restaurant = topRatedRestaurants[index];
+                      return _buildTopRatedCard(restaurant);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+        ),
+
+      // 2. Restaurants to Explore Section
+      if (openRestaurants.isNotEmpty) ...[
+        _padSliver(
+          const SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Restaurants to explore',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Featured Restaurants',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textMuted,
+                  ),
+                ),
+                SizedBox(height: 12),
+              ],
+            ),
+          ),
+        ),
+        _padSliver(
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                final restaurant = openRestaurants[index];
+                return RestaurantCard(
+                  restaurant: restaurant,
+                  userLat: _currentAddress?.latitude,
+                  userLng: _currentAddress?.longitude,
+                  onTap: () => _onRestaurantSelected(restaurant),
+                );
+              },
+              childCount: openRestaurants.length,
+            ),
           ),
         ),
       ],
-    );
-  }
 
-  Widget _buildRestaurantCard(Restaurant restaurant) {
-    final logoUrl = restaurant.getFullLogoUrl();
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        elevation: 0,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(18),
-          onTap: () => _onRestaurantSelected(restaurant),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.grey.shade200, width: 1),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x0F000000),
-                  blurRadius: 10,
-                  offset: Offset(0, 2),
+      // 3. Closed for Delivery Section
+      if (closedRestaurants.isNotEmpty) ...[
+        _padSliver(
+          const SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(height: 16),
+                Text(
+                  'Closed for Delivery',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textDark,
+                  ),
                 ),
+                SizedBox(height: 12),
               ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-              child: Row(
-                children: [
-                  // Circular logo
-                  Container(
-                    width: _logoSize,
-                    height: _logoSize,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.black,
-                      border: Border.all(color: _brand, width: 2),
-                    ),
-                    child: ClipOval(
-                      child: logoUrl.isNotEmpty
-                          ? Image.network(
-                              logoUrl,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  _buildPlaceholderLogo(restaurant.name),
-                              loadingBuilder: (context, child, progress) {
-                                if (progress == null) return child;
-                                return const Center(
-                                  child: SizedBox(
-                                    width: 22,
-                                    height: 22,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: _brand,
-                                    ),
-                                  ),
-                                );
-                              },
-                            )
-                          : _buildPlaceholderLogo(restaurant.name),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-
-                  // Name
-                  Expanded(
-                    child: Text(
-                      restaurant.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                        color: _textDark,
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(width: 8),
-                  Icon(Icons.chevron_right_rounded,
-                      size: 28, color: Colors.grey.shade500),
-                ],
-              ),
             ),
           ),
         ),
+        _padSliver(
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                final restaurant = closedRestaurants[index];
+                return RestaurantCard(
+                  restaurant: restaurant,
+                  userLat: _currentAddress?.latitude,
+                  userLng: _currentAddress?.longitude,
+                  onTap: () => _onRestaurantSelected(restaurant),
+                );
+              },
+              childCount: closedRestaurants.length,
+            ),
+          ),
+        ),
+      ],
+
+      // Bottom breathing space
+      const SliverToBoxAdapter(child: SizedBox(height: 16)),
+    ];
+  }
+
+  /// Blank area + small API logo, used when a restaurant has no banner.
+  Widget _buildTopRatedNoBanner(String logoUrl) {
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: const Color(0xFFF2F4F7),
+      child: Center(
+        child: logoUrl.isNotEmpty
+            ? Container(
+          width: 46,
+          height: 46,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white,
+          ),
+          child: ClipOval(
+            child: Image.network(
+              logoUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            ),
+          ),
+        )
+            : const SizedBox.shrink(),
       ),
     );
   }
 
-  Widget _buildFooterBanner() {
+  /// Small Portrait Card for Top Rated Section
+  Widget _buildTopRatedCard(Restaurant restaurant) {
+    final bannerUrls = restaurant.getFullBannerUrls();
+    final logoUrl = restaurant.getFullLogoUrl();
+    final noBanner = _buildTopRatedNoBanner(logoUrl);
+    final isOpen = restaurant.isOpenNow();
+
+    Widget image = bannerUrls.isNotEmpty
+        ? Image.network(
+      bannerUrls.first,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      errorBuilder: (_, __, ___) => noBanner,
+    )
+        : noBanner;
+
+    // Closed restaurants: greyscale image
+    if (!isOpen) {
+      image = ColorFiltered(
+        colorFilter: const ColorFilter.matrix(<double>[
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0, 0, 0, 1, 0,
+        ]),
+        child: image,
+      );
+    }
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      width: 130,
+      margin: const EdgeInsets.only(right: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFEDF7E1),
-        borderRadius: BorderRadius.circular(16),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.chipUnselected),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x10000000),
-            blurRadius: 8,
+            color: Color(0x0A000000),
+            blurRadius: 6,
             offset: Offset(0, 2),
           ),
         ],
       ),
-      child: Row(
-        children: [
-          const Icon(Icons.eco_outlined, size: 26, color: _brandDark),
-          const SizedBox(width: 12),
-          Container(width: 1, height: 26, color: Colors.green.shade200),
-          const Expanded(
-            child: Center(
-              child: Text(
-                'Fresh Food Healthy For You',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF2E6B00),
+      child: InkWell(
+        onTap: () => _onRestaurantSelected(restaurant),
+        borderRadius: BorderRadius.circular(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image with Heart Icon
+            Stack(
+              children: [
+                SizedBox(
+                  height: 100,
+                  width: double.infinity,
+                  child: ClipRRect(
+                    borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(14)),
+                    child: image,
+                  ),
                 ),
+                if (!isOpen)
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.55),
+                        borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(14)),
+                      ),
+                    ),
+                  ),
+                if (!isOpen)
+                  Positioned(
+                    left: 8,
+                    right: 8,
+                    bottom: 6,
+                    child: Text(
+                      restaurant.openingText(),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.85),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.favorite_border,
+                      size: 14,
+                      color: AppTheme.textDark,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            // Text Info
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          restaurant.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: isOpen
+                                ? AppTheme.textDark
+                                : AppTheme.textMuted,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.all(1.5),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: restaurant.isVegetarian
+                                ? AppTheme.openGreen
+                                : AppTheme.closedRed,
+                            width: 1,
+                          ),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                        child: Icon(
+                          Icons.circle,
+                          size: 5,
+                          color: restaurant.isVegetarian
+                              ? AppTheme.openGreen
+                              : AppTheme.closedRed,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+
+                  // Rating Badge
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 2),
+                        decoration: BoxDecoration(
+                          color:
+                          isOpen ? AppTheme.openGreen : AppTheme.textMuted,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              restaurant.rating.toStringAsFixed(1),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(width: 2),
+                            const Icon(Icons.star,
+                                size: 9, color: Colors.white),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPlaceholderLogo(String name) {
-    final initial = name.isNotEmpty ? name[0].toUpperCase() : 'R';
-    return Center(
-      child: Text(
-        initial,
-        style: const TextStyle(
-          fontSize: 30,
-          fontWeight: FontWeight.bold,
-          color: _brand,
+          ],
         ),
       ),
     );
   }
-}
-
-class _MapLinesPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white.withAlpha(60)
-      ..strokeWidth = 7
-      ..strokeCap = StrokeCap.round;
-
-    final thin = Paint()
-      ..color = Colors.white.withAlpha(40)
-      ..strokeWidth = 3
-      ..strokeCap = StrokeCap.round;
-
-    final w = size.width;
-    final h = size.height;
-
-    canvas.drawLine(Offset(-20, h * 0.80), Offset(w * 0.55, h * 0.45), paint);
-    canvas.drawLine(
-        Offset(w * 0.45, h * 0.45), Offset(w + 20, h * 0.75), paint);
-    canvas.drawLine(
-        Offset(w * 0.20, h * 1.0), Offset(w * 0.62, h * 0.50), paint);
-    canvas.drawLine(
-        Offset(w * 0.62, h * 0.50), Offset(w * 1.05, h * 0.38), paint);
-
-    canvas.drawLine(
-        Offset(w * 0.05, h * 0.55), Offset(w * 0.40, h * 0.95), thin);
-    canvas.drawLine(
-        Offset(w * 0.70, h * 0.95), Offset(w * 1.00, h * 0.55), thin);
-    canvas.drawLine(Offset(0, h * 0.62), Offset(w * 0.35, h * 0.40), thin);
-    canvas.drawLine(Offset(w * 0.75, h * 0.42), Offset(w, h * 0.60), thin);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _MapPin extends StatelessWidget {
-  const _MapPin();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 40,
-      height: 52,
-      child: CustomPaint(painter: _MapPinPainter()),
-    );
-  }
-}
-
-class _MapPinPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    final r = w / 2;
-    final cx = w / 2;
-    final cy = r;
-
-    final path = Path()
-      ..moveTo(cx, h)
-      ..cubicTo(cx - r * 0.2, h - 8, 0, cy + r * 0.9, 0, cy)
-      ..arcToPoint(Offset(w, cy),
-          radius: Radius.circular(r), clockwise: true)
-      ..cubicTo(w, cy + r * 0.9, cx + r * 0.2, h - 8, cx, h)
-      ..close();
-
-    canvas.drawShadow(path, const Color(0x55000000), 3, false);
-    canvas.drawPath(path, Paint()..color = const Color(0xFF63B800));
-    canvas.drawCircle(
-      Offset(cx, cy),
-      r * 0.36,
-      Paint()..color = Colors.white.withAlpha(215),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

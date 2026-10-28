@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -73,5 +74,40 @@ class SessionManager {
       isHttpOnly: map['isHttpOnly'] as bool?,
       expiresDate: map['expiresDate'] as int?,
     );
+  }
+
+  /// Safely measures and returns the exact size and metrics of cookies stored in SharedPreferences.
+  static Future<Map<String, dynamic>> getCookieStorageMetrics() async {
+    final prefs = await SharedPreferences.getInstance();
+    final cookiesJson = prefs.getString(_keySharedCookies);
+    if (cookiesJson == null || cookiesJson.isEmpty) {
+      return {
+        'exists': false,
+        'bytes': 0,
+        'kb': '0.00',
+        'mb': '0.0000',
+        'cookieCount': 0,
+        'cookies': <Map<String, dynamic>>[],
+      };
+    }
+
+    final bytes = utf8.encode(cookiesJson).length;
+    int cookieCount = 0;
+    List<Map<String, dynamic>> parsedCookies = [];
+
+    try {
+      final List<dynamic> list = jsonDecode(cookiesJson);
+      cookieCount = list.length;
+      parsedCookies = list.cast<Map<String, dynamic>>();
+    } catch (_) {}
+
+    return {
+      'exists': true,
+      'bytes': bytes,
+      'kb': (bytes / 1024).toStringAsFixed(2),
+      'mb': (bytes / (1024 * 1024)).toStringAsFixed(4),
+      'cookieCount': cookieCount,
+      'cookies': parsedCookies,
+    };
   }
 }

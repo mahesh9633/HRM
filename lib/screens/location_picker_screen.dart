@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../services/location_service.dart';
+import '../theme/app_theme.dart';
 
 class LocationPickerScreen extends StatefulWidget {
   final LocationAddress? initialLocation;
@@ -17,15 +18,13 @@ class LocationPickerScreen extends StatefulWidget {
 }
 
 class _LocationPickerScreenState extends State<LocationPickerScreen> {
-  static const Color _brand = Color(0xFF80CC00);
+  static const Color _brand = AppTheme.primary;
 
-  // Extra map height that goes under the rounded top corners of the bottom card.
-  static const double _mapUnderCard = 24;
-
-  final MapController _mapController = MapController();
+  GoogleMapController? _mapController;
   final TextEditingController _searchController = TextEditingController();
 
-  LatLng _currentCenter = const LatLng(14.1956, 78.8083); // Default Kadapa/AP
+  // Default initial center (Rayachoti/AP)
+  LatLng _currentCenter = const LatLng(14.0583, 78.7512);
   LocationAddress? _selectedAddress;
   bool _isGeocoding = false;
   bool _isLocatingCurrent = false;
@@ -33,6 +32,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   Timer? _debounceTimer;
   List<LocationAddress> _searchResults = [];
   bool _isSearching = false;
+
+  int _geocodeRequestToken = 0;
 
   @override
   void initState() {
@@ -49,6 +50,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   }
 
   Future<void> _fetchCurrentLocation() async {
+    if (!mounted) return;
     setState(() {
       _isLocatingCurrent = true;
     });
@@ -57,11 +59,18 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     if (!mounted) return;
 
     if (pos != null) {
-      final center = LatLng(pos.latitude, pos.longitude);
-      _mapController.move(center, 15.0);
-      await _reverseGeocodeLocation(center);
+      final point = LatLng(pos.latitude, pos.longitude);
+      setState(() {
+        _currentCenter = point;
+      });
+
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLngZoom(point, 16.0),
+      );
+
+      await _reverseGeocodeLocation(point);
     } else {
-      await _reverseGeocodeLocation(_currentCenter);
+      _showLocationErrorSnackBar();
     }
 
     if (mounted) {
@@ -71,7 +80,27 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     }
   }
 
+  void _showLocationErrorSnackBar() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text(
+          'Unable to get GPS location. Please check location permissions and GPS settings.',
+        ),
+        backgroundColor: AppTheme.closedRed,
+        behavior: SnackBarBehavior.floating,
+        action: SnackBarAction(
+          label: 'SETTINGS',
+          textColor: Colors.white,
+          onPressed: () {
+            Geolocator.openLocationSettings();
+          },
+        ),
+      ),
+    );
+  }
+
   Future<void> _reverseGeocodeLocation(LatLng point) async {
+    final currentToken = ++_geocodeRequestToken;
     setState(() {
       _currentCenter = point;
       _isGeocoding = true;
@@ -82,11 +111,24 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       point.longitude,
     );
 
-    if (!mounted) return;
+    if (!mounted || currentToken != _geocodeRequestToken) return;
+
     setState(() {
       _selectedAddress = address;
       _isGeocoding = false;
     });
+  }
+
+  void _onMapTapped(LatLng point) {
+    setState(() {
+      _currentCenter = point;
+    });
+
+    _mapController?.animateCamera(
+      CameraUpdate.newLatLng(point),
+    );
+
+    _reverseGeocodeLocation(point);
   }
 
   void _onSearchChanged(String query) {
@@ -114,15 +156,19 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     });
   }
 
-  void _selectSearchResult(LocationAddress address) {
+  Future<void> _selectSearchResult(LocationAddress address) async {
     final point = LatLng(address.latitude, address.longitude);
     _searchController.text = address.address;
+
     setState(() {
       _searchResults = [];
       _selectedAddress = address;
       _currentCenter = point;
     });
-    _mapController.move(point, 15.0);
+
+    _mapController?.animateCamera(
+      CameraUpdate.newLatLngZoom(point, 16.0),
+    );
 
     if (address.pincode.isEmpty) {
       _reverseGeocodeLocation(point);
@@ -133,7 +179,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   void dispose() {
     _debounceTimer?.cancel();
     _searchController.dispose();
-    _mapController.dispose();
     super.dispose();
   }
 
@@ -143,7 +188,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      // The keyboard should not squeeze the map and the bottom card.
       resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: const Text(
@@ -154,25 +198,57 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
       ),
-      // CHANGED: map area and bottom card are now in a Column.
-      // The "Use Current Location" button sits inside the map area, so it
-      // is always just above the bottom card, on any screen size.
       body: Column(
         children: [
           Expanded(
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                // Map (a little taller so it goes under the card's corners)
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: -_mapUnderCard,
-                  child: _buildMap(),
+                // Google Map Widget (Native google_maps_flutter matching TaxiRider)
+                Positioned.fill(
+                  child: GoogleMap(
+                    initialCameraPosition: CameraPosition(
+                      target: _currentCenter,
+                      zoom: 16.0,
+                    ),
+                    onMapCreated: (controller) {
+                      _mapController = controller;
+                    },
+                    onTap: _onMapTapped,
+                    onCameraMove: (position) {
+                      _currentCenter = position.target;
+                    },
+                    onCameraIdle: () {
+                      _reverseGeocodeLocation(_currentCenter);
+                    },
+                    markers: {
+                      Marker(
+                        markerId: const MarkerId('selected_location'),
+                        position: _currentCenter,
+                        icon: BitmapDescriptor.defaultMarkerWithHue(
+                          BitmapDescriptor.hueOrange,
+                        ),
+                      ),
+                    },
+                    zoomControlsEnabled: false,
+                    compassEnabled: true,
+                    mapToolbarEnabled: false,
+                  ),
                 ),
 
-                // Search bar + results
+                // Center Pin Overlay Icon
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.only(bottom: 36),
+                    child: Icon(
+                      Icons.location_on,
+                      size: 48,
+                      color: AppTheme.closedRed,
+                    ),
+                  ),
+                ),
+
+                // Search Bar Overlay
                 Positioned(
                   top: 16,
                   left: 16,
@@ -180,64 +256,20 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                   child: _buildSearchOverlay(),
                 ),
 
-                // "Use Current Location" button (always above the card)
+                // "Use Current Location" Floating Button
                 Positioned(
                   right: 16,
-                  bottom: _mapUnderCard + 12,
+                  bottom: 16,
                   child: _buildCurrentLocationButton(),
                 ),
               ],
             ),
           ),
 
-          // Selected address card & confirm button
+          // Selected Address Card & Confirm Button
           _buildBottomCard(),
         ],
       ),
-    );
-  }
-
-  Widget _buildMap() {
-    return FlutterMap(
-      mapController: _mapController,
-      options: MapOptions(
-        initialCenter: _currentCenter,
-        initialZoom: 14.0,
-        onPositionChanged: (position, hasGesture) {
-          if (hasGesture) {
-            _currentCenter = position.center;
-          }
-        },
-        onMapEvent: (event) {
-          if (event is MapEventMoveEnd) {
-            _reverseGeocodeLocation(_currentCenter);
-          }
-        },
-        onTap: (tapPosition, point) {
-          _mapController.move(point, _mapController.camera.zoom);
-          _reverseGeocodeLocation(point);
-        },
-      ),
-      children: [
-        TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.myteknoland.hrm',
-        ),
-        MarkerLayer(
-          markers: [
-            Marker(
-              point: _currentCenter,
-              width: 48,
-              height: 48,
-              child: const Icon(
-                Icons.location_on,
-                size: 48,
-                color: Colors.redAccent,
-              ),
-            ),
-          ],
-        ),
-      ],
     );
   }
 
@@ -255,12 +287,12 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
               prefixIcon: const Icon(Icons.search, color: _brand),
               suffixIcon: _searchController.text.isNotEmpty
                   ? IconButton(
-                icon: const Icon(Icons.clear),
-                onPressed: () {
-                  _searchController.clear();
-                  _onSearchChanged('');
-                },
-              )
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        _onSearchChanged('');
+                      },
+                    )
                   : null,
               filled: true,
               fillColor: Colors.white,
@@ -357,13 +389,13 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       elevation: 4,
       icon: _isLocatingCurrent
           ? const SizedBox(
-        width: 18,
-        height: 18,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          color: _brand,
-        ),
-      )
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: _brand,
+              ),
+            )
           : const Icon(Icons.my_location, color: _brand),
       label: const Text(
         'Use Current Location',
@@ -385,7 +417,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
           ),
         ],
       ),
-      // SafeArea keeps the button clear of the phone's bottom gesture bar.
       child: SafeArea(
         top: false,
         child: Padding(
@@ -424,7 +455,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
               Text(
                 _selectedAddress?.displayName ??
                     _selectedAddress?.address ??
-                    'Move map or search to select location',
+                    'Tap map or search to select location',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -442,7 +473,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEAF5DD),
+                    color: AppTheme.primarySoft,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -450,13 +481,13 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF2E6B00),
+                      color: AppTheme.openGreen,
                     ),
                   ),
                 )
               else
                 Text(
-                  'Pincode: Not resolved (will search all nearby)',
+                  'Pincode: Not resolved for coordinates',
                   style: TextStyle(
                     fontSize: 12,
                     color: Colors.orange.shade800,
@@ -473,8 +504,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                   onPressed: _selectedAddress == null
                       ? null
                       : () {
-                    Navigator.pop(context, _selectedAddress);
-                  },
+                          Navigator.pop(context, _selectedAddress);
+                        },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _brand,
                     foregroundColor: Colors.white,

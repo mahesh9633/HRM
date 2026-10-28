@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 
 class LocationAddress {
   final String address;
@@ -25,17 +27,13 @@ class LocationAddress {
 }
 
 class LocationService {
-  static const Map<String, String> _headers = {
-    'User-Agent': 'HRMApp/1.0 (Android App)',
-    'Accept-Language': 'en-US,en;q=0.9',
-  };
-
   /// Request permissions & obtain user's current position if available.
+  /// Uses a 15-second timeout and high accuracy.
   static Future<Position?> getCurrentPosition() async {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        debugPrint('Location services are disabled.');
+        debugPrint('Location services are disabled on the device.');
         return null;
       }
 
@@ -43,7 +41,7 @@ class LocationService {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          debugPrint('Location permissions are denied.');
+          debugPrint('Location permissions were denied by user.');
           return null;
         }
       }
@@ -53,177 +51,263 @@ class LocationService {
         return null;
       }
 
-      return await Geolocator.getCurrentPosition(
+      // Try quick last known position as immediate candidate if available
+      try {
+        final lastPos = await Geolocator.getLastKnownPosition();
+        if (lastPos != null) {
+          debugPrint('Last known position found: ${lastPos.latitude}, ${lastPos.longitude}');
+        }
+      } catch (_) {}
+
+      // Obtain fresh current position
+      final fresh = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium,
-          timeLimit: Duration(seconds: 5),
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
         ),
       );
+      debugPrint('GPS OK: ${fresh.latitude}, ${fresh.longitude}');
+      return fresh;
     } catch (e) {
-      debugPrint('Error getting location: $e');
+      debugPrint('Error getting GPS location: $e');
       return null;
     }
   }
 
-  /// Listen for position updates without requesting permissions repeatedly.
-  static Stream<Position>? getPositionStream() {
-    try {
-      return Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium,
-          distanceFilter: 50,
-        ),
-      );
-    } catch (e) {
-      debugPrint('Error creating position stream: $e');
-      return null;
-    }
-  }
-
-  /// Reverse geocode lat/lng to readable address name and postal pincode.
+  /// Reverse geocode lat/lng to readable address name and postal pincode using Native Geocoding with Google API fallback.
   static Future<LocationAddress?> reverseGeocode(
     double lat,
     double lng,
   ) async {
+    // 1. Try Native Platform Geocoding first (No API key restriction issues)
     try {
-      final url = Uri.parse(
-        'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lng&addressdetails=1',
-      );
-      final response = await http
-          .get(url, headers: _headers)
+      final placemarks = await placemarkFromCoordinates(lat, lng)
           .timeout(const Duration(seconds: 8));
 
+      if (placemarks.isNotEmpty) {
+        final place = placemarks.first;
+        final String pincode = (place.postalCode ?? '').replaceAll(RegExp(r'\s+'), '');
+
+        final String sublocality = place.subLocality ?? place.subThoroughfare ?? place.name ?? '';
+        final String locality = place.locality ?? place.subAdministrativeArea ?? '';
+        final String adminArea = place.administrativeArea ?? '';
+
+        final nameParts = <String>[];
+        if (sublocality.isNotEmpty && sublocality != place.name) {
+          nameParts.add(sublocality);
+        }
+        if (locality.isNotEmpty && !nameParts.contains(locality)) {
+          nameParts.add(locality);
+        }
+        if (adminArea.isNotEmpty && !nameParts.contains(adminArea)) {
+          nameParts.add(adminArea);
+        }
+
+        final String addressStr = nameParts.isNotEmpty
+            ? nameParts.join(', ')
+            : (place.name?.isNotEmpty == true ? place.name! : 'Selected Location');
+
+        final displayParts = <String>[];
+        if (place.street != null && place.street!.trim().isNotEmpty) {
+          displayParts.add(place.street!.trim());
+        }
+        if (sublocality.isNotEmpty && !displayParts.contains(sublocality)) {
+          displayParts.add(sublocality);
+        }
+        if (locality.isNotEmpty && !displayParts.contains(locality)) {
+          displayParts.add(locality);
+        }
+        if (adminArea.isNotEmpty && !displayParts.contains(adminArea)) {
+          displayParts.add(adminArea);
+        }
+        if (pincode.isNotEmpty) {
+          displayParts.add(pincode);
+        }
+
+        final String displayName = displayParts.isNotEmpty
+            ? displayParts.join(', ')
+            : addressStr;
+
+        debugPrint('NATIVE GEOCODE OK: address=$addressStr, pincode=$pincode');
+        return LocationAddress(
+          address: addressStr.isNotEmpty ? addressStr : 'Selected Location',
+          pincode: pincode,
+          latitude: lat,
+          longitude: lng,
+          displayName: displayName,
+        );
+      }
+    } catch (e) {
+      debugPrint('Native geocoding notice: $e. Falling back to HTTP Geocoding API if key allows.');
+    }
+
+    // 2. Fallback to Google Geocoding REST API
+    try {
+      final googleUrl = Uri.parse(
+        'https://maps.googleapis.com/maps/api/geocode/json?latlng=$lat,$lng&key=${ApiConfig.googleMapsApiKey}',
+      );
+
+      final response = await http
+          .get(googleUrl)
+          .timeout(const Duration(seconds: 8));
+
+      debugPrint('GEOCODE REST http status: ${response.statusCode}');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data is Map<String, dynamic>) {
-          final addr = data['address'] as Map<String, dynamic>? ?? {};
-          var pincode = (addr['postcode'] ??
-                  addr['postal_code'] ??
-                  addr['postalcode'] ??
-                  addr['zip'])
-              ?.toString()
-              .replaceAll(RegExp(r'\s+'), '') ??
-              '';
-          final displayNameStr = data['display_name']?.toString() ?? '';
+        debugPrint('GEOCODE REST api status: ${data['status']} | error: ${data['error_message']}');
+        if (data is Map<String, dynamic> &&
+            data['status'] == 'OK' &&
+            data['results'] is List &&
+            (data['results'] as List).isNotEmpty) {
+          final results = data['results'] as List;
+          final firstResult = results.first as Map<String, dynamic>;
+          String pincode = '';
+          String sublocality = '';
+          String locality = '';
+          String adminArea = '';
 
-          if (pincode.isEmpty && displayNameStr.isNotEmpty) {
-            final match = RegExp(r'\b[1-9]\d{5}\b').firstMatch(displayNameStr);
-            if (match != null) {
-              pincode = match.group(0)!;
-            }
-          }
+          final components = firstResult['address_components'] as List? ?? [];
+          for (final c in components) {
+            if (c is Map<String, dynamic>) {
+              final types = (c['types'] as List? ?? []).cast<String>();
+              final longName = c['long_name']?.toString().trim() ?? '';
 
-          final parts = <String>[];
-          final area = addr['suburb'] ??
-              addr['neighbourhood'] ??
-              addr['hamlet'] ??
-              addr['village'] ??
-              addr['town'] ??
-              addr['city'] ??
-              addr['county'] ??
-              addr['state_district'];
-
-          if (area != null && area.toString().isNotEmpty) {
-            parts.add(area.toString());
-          }
-          if (addr['road'] != null && addr['road'].toString() != area.toString()) {
-            parts.add(addr['road'].toString());
-          }
-          if (addr['state_district'] != null &&
-              addr['state_district'].toString() != area.toString() &&
-              !parts.contains(addr['state_district'].toString())) {
-            parts.add(addr['state_district'].toString());
-          }
-
-          String addressStr = parts.isNotEmpty ? parts.join(', ') : '';
-
-          // If address is numeric or empty, extract location name from display_name
-          if (addressStr.isEmpty || RegExp(r'^\d+$').hasMatch(addressStr.trim())) {
-            if (displayNameStr.isNotEmpty) {
-              final rawParts = displayNameStr.split(',');
-              final nonNumeric = rawParts
-                  .map((p) => p.trim())
-                  .where((p) => p.isNotEmpty && !RegExp(r'^\d+$').hasMatch(p) && p.toLowerCase() != 'india')
-                  .take(2);
-              if (nonNumeric.isNotEmpty) {
-                addressStr = nonNumeric.join(', ');
+              if (types.contains('postal_code') && pincode.isEmpty) {
+                pincode = longName.replaceAll(RegExp(r'\s+'), '');
+              } else if (types.contains('sublocality') ||
+                  types.contains('sublocality_level_1') ||
+                  types.contains('neighborhood')) {
+                if (sublocality.isEmpty) sublocality = longName;
+              } else if (types.contains('locality')) {
+                if (locality.isEmpty) locality = longName;
+              } else if (types.contains('administrative_area_level_2')) {
+                if (adminArea.isEmpty) adminArea = longName;
               }
             }
           }
 
-          if (addressStr.isEmpty) {
-            addressStr = 'Detected Location';
+          final nameParts = <String>[];
+          if (sublocality.isNotEmpty) nameParts.add(sublocality);
+          if (locality.isNotEmpty && !nameParts.contains(locality)) {
+            nameParts.add(locality);
           }
+          if (adminArea.isNotEmpty && !nameParts.contains(adminArea)) {
+            nameParts.add(adminArea);
+          }
+
+          final formattedAddr = firstResult['formatted_address']?.toString() ?? '';
+          String addressStr = nameParts.isNotEmpty
+              ? nameParts.join(', ')
+              : (formattedAddr.isNotEmpty ? formattedAddr.split(',').first : 'Selected Location');
 
           return LocationAddress(
             address: addressStr,
             pincode: pincode,
             latitude: lat,
             longitude: lng,
-            displayName: displayNameStr.isNotEmpty ? displayNameStr : addressStr,
+            displayName: formattedAddr.isNotEmpty ? formattedAddr : addressStr,
           );
         }
       }
     } catch (e) {
-      debugPrint('Reverse geocoding error: $e');
+      debugPrint('Google reverse geocoding REST exception: $e');
     }
+
+    // Default Fallback: Return coordinates and title with unresolved pincode
     return LocationAddress(
       address: 'Selected Location',
       pincode: '',
       latitude: lat,
       longitude: lng,
-      displayName: 'Location ($lat, $lng)',
+      displayName: 'Location (${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)})',
     );
   }
 
-  /// Search places by name/query.
+  /// Search places by name/query using native geocoding with REST API fallback.
   static Future<List<LocationAddress>> searchPlaces(String query) async {
-    if (query.trim().length < 2) return [];
+    final cleanQuery = query.trim();
+    if (cleanQuery.length < 2) return [];
+
+    // 1. Try Native platform locationFromAddress
     try {
-      final url = Uri.parse(
-        'https://nominatim.openstreetmap.org/search?format=json&q=${Uri.encodeComponent(query)}&addressdetails=1&limit=6',
-      );
-      final response = await http
-          .get(url, headers: _headers)
+      final locations = await locationFromAddress(cleanQuery)
           .timeout(const Duration(seconds: 8));
 
-      if (response.statusCode == 200) {
-        final List list = jsonDecode(response.body);
+      if (locations.isNotEmpty) {
         final results = <LocationAddress>[];
-        for (final item in list) {
-          if (item is Map<String, dynamic>) {
-            final lat = double.tryParse(item['lat']?.toString() ?? '') ?? 0.0;
-            final lng = double.tryParse(item['lon']?.toString() ?? '') ?? 0.0;
-            final addr = item['address'] as Map<String, dynamic>? ?? {};
-            var pincode = (addr['postcode'] ??
-                    addr['postal_code'] ??
-                    addr['postalcode'] ??
-                    addr['zip'])
-                ?.toString()
-                .replaceAll(RegExp(r'\s+'), '') ??
-                '';
-            final displayName = item['display_name']?.toString() ?? '';
-            if (pincode.isEmpty && displayName.isNotEmpty) {
-              final match = RegExp(r'\b[1-9]\d{5}\b').firstMatch(displayName);
-              if (match != null) {
-                pincode = match.group(0)!;
-              }
-            }
-            final name = item['name']?.toString() ?? displayName.split(',').first;
-
+        for (final loc in locations.take(5)) {
+          final addr = await reverseGeocode(loc.latitude, loc.longitude);
+          if (addr != null) {
+            results.add(addr);
+          } else {
             results.add(LocationAddress(
-              address: name,
-              pincode: pincode,
-              latitude: lat,
-              longitude: lng,
-              displayName: displayName,
+              address: cleanQuery,
+              pincode: '',
+              latitude: loc.latitude,
+              longitude: loc.longitude,
+              displayName: cleanQuery,
             ));
           }
         }
-        return results;
+        if (results.isNotEmpty) return results;
       }
     } catch (e) {
-      debugPrint('Search places error: $e');
+      debugPrint('Native locationFromAddress search error: $e');
+    }
+
+    // 2. Fallback to Google Geocoding REST API
+    try {
+      final googleUrl = Uri.parse(
+        'https://maps.googleapis.com/maps/api/geocode/json?address=${Uri.encodeComponent(cleanQuery)}&key=${ApiConfig.googleMapsApiKey}',
+      );
+
+      final response = await http
+          .get(googleUrl)
+          .timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic> &&
+            data['status'] == 'OK' &&
+            data['results'] is List) {
+          final List list = data['results'];
+          final results = <LocationAddress>[];
+
+          for (final item in list) {
+            if (item is Map<String, dynamic>) {
+              final geometry = item['geometry'] as Map<String, dynamic>? ?? {};
+              final location = geometry['location'] as Map<String, dynamic>? ?? {};
+              final lat = (location['lat'] as num?)?.toDouble() ?? 0.0;
+              final lng = (location['lng'] as num?)?.toDouble() ?? 0.0;
+
+              String pincode = '';
+              final components = item['address_components'] as List? ?? [];
+              for (final c in components) {
+                if (c is Map<String, dynamic>) {
+                  final types = (c['types'] as List? ?? []).cast<String>();
+                  if (types.contains('postal_code')) {
+                    pincode = c['long_name']?.toString().replaceAll(RegExp(r'\s+'), '') ?? '';
+                  }
+                }
+              }
+
+              final displayName = item['formatted_address']?.toString() ?? '';
+              final name = displayName.split(',').first.trim();
+
+              results.add(LocationAddress(
+                address: name,
+                pincode: pincode,
+                latitude: lat,
+                longitude: lng,
+                displayName: displayName,
+              ));
+            }
+          }
+          return results;
+        }
+      }
+    } catch (e) {
+      debugPrint('Google Places search error: $e');
     }
     return [];
   }

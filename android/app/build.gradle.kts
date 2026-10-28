@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.nutricafe"
+    namespace = "com.example.nexdine"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973"
 
@@ -15,13 +15,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
-    }
-
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.nutricafe"
+        applicationId = "com.example.nexdine"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -36,6 +32,24 @@ android {
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
         }
+    }
+}
+
+configurations.all {
+    resolutionStrategy {
+        force("androidx.core:core:1.15.0")
+        force("androidx.core:core-ktx:1.15.0")
+        force("androidx.browser:browser:1.8.0")
+        force("org.jetbrains.kotlin:kotlin-stdlib:2.1.0")
+        force("org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.1.0")
+        force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.1.0")
+        force("org.jetbrains.kotlin:kotlin-stdlib-common:2.1.0")
+    }
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
     }
 }
 

@@ -25,7 +25,7 @@
 
     <application
         android:name="${applicationName}"
-        android:label="NUTRI CAFE"
+        android:label="NEXDROP"
         android:icon="@mipmap/ic_launcher"
         android:hardwareAccelerated="true"
         android:usesCleartextTraffic="true"
@@ -68,6 +68,11 @@
             android:name="flutterEmbedding"
             android:value="2"/>
 
+        <!-- Google Maps API Key -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyCqIdr9VWtre1CUTEZxAVenvWnqOD3Hm5A"/>
+
     </application>
 
     <queries>
@@ -75,6 +80,64 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+
+        <!-- Contact Us: dialer, email, web, WhatsApp -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="tel"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="mailto"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="whatsapp"/>
+        </intent>
+
+        <!-- Payment App Deep Link Schemes -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="upi"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="phonepe"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="paytmmp"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="tez"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="gpay"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="cred"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="bhim"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="mobikwik"/>
+        </intent>
+        <!-- Payment App Package Names for Android 11+ Package Visibility -->
+        <package android:name="com.google.android.apps.nbu.paisa.user"/>
+        <package android:name="com.phonepe.app"/>
+        <package android:name="net.one97.paytm"/>
+        <package android:name="in.org.npci.upiapp"/>
+        <package android:name="com.dreamplug.androidapp"/>
     </queries>
 
 </manifest>

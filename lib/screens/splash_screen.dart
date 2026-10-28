@@ -1,7 +1,106 @@
+// import 'dart:async';
+// import 'package:flutter/material.dart';
+// import 'package:permission_handler/permission_handler.dart';
+// import '../theme/app_theme.dart';
+// import 'restaurant_selection_screen.dart';
+//
+// class SplashScreen extends StatefulWidget {
+//   const SplashScreen({super.key});
+//
+//   @override
+//   State<SplashScreen> createState() => _SplashScreenState();
+// }
+//
+// class _SplashScreenState extends State<SplashScreen>
+//     with SingleTickerProviderStateMixin {
+//   late AnimationController _controller;
+//   late Animation<double> _scaleAnimation;
+//   late Animation<double> _fadeAnimation;
+//
+//   final DateTime _startTime = DateTime.now();
+//   bool _navigated = false;
+//
+//   @override
+//   void initState() {
+//     super.initState();
+//     _controller = AnimationController(
+//       vsync: this,
+//       duration: const Duration(milliseconds: 1200),
+//     );
+//
+//     _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+//       CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
+//     );
+//
+//     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+//       CurvedAnimation(parent: _controller, curve: Curves.easeIn),
+//     );
+//
+//     _controller.forward();
+//
+//     WidgetsBinding.instance.addPostFrameCallback((_) async {
+//       // Request permissions
+//       await Permission.location.request();
+//
+//       // Show splash for ~2 seconds then navigate to Home
+//       final elapsed = DateTime.now().difference(_startTime);
+//       final remaining = const Duration(seconds: 2) - elapsed;
+//       if (remaining > Duration.zero) {
+//         await Future.delayed(remaining);
+//       }
+//
+//       _goToNextScreen();
+//     });
+//   }
+//
+//   void _goToNextScreen() {
+//     if (!mounted || _navigated) return;
+//     _navigated = true;
+//
+//     Navigator.pushReplacement(
+//       context,
+//       MaterialPageRoute(
+//         builder: (_) => const RestaurantSelectionScreen(),
+//       ),
+//     );
+//   }
+//
+//   @override
+//   void dispose() {
+//     _controller.dispose();
+//     super.dispose();
+//   }
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       backgroundColor: AppTheme.primary,
+//       body: SafeArea(
+//         child: Center(
+//           child: FadeTransition(
+//             opacity: _fadeAnimation,
+//             child: ScaleTransition(
+//               scale: _scaleAnimation,
+//               child: ClipOval(
+//                 child: Image.asset(
+//                   'assets/images/logo.webp',
+//                   width: 180,
+//                   height: 180,
+//                   fit: BoxFit.cover,
+//                 ),
+//               ),
+//             ),
+//           ),
+//         ),
+//       ),
+//     );
+//   }
+// }
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
-import '../services/session_manager.dart';
+import '../theme/app_theme.dart';
 import 'restaurant_selection_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -13,7 +112,6 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
-
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
   late Animation<double> _fadeAnimation;
@@ -21,41 +119,39 @@ class _SplashScreenState extends State<SplashScreen>
   final DateTime _startTime = DateTime.now();
   bool _navigated = false;
 
+  static const String _logoAsset = 'assets/images/logo.webp';
+
   @override
   void initState() {
     super.initState();
-    debugPrint('SPLASH INIT');
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 1400),
     );
 
-    _scaleAnimation = Tween<double>(begin: 0.6, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.0, 0.7, curve: Curves.easeOutBack),
+      ),
     );
 
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeIn),
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.0, 0.5, curve: Curves.easeIn),
+      ),
     );
 
+    _controller.forward();
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      final isLoggedIn = await SessionManager.isLoggedIn();
-
-      debugPrint('==============================');
-      debugPrint('IS LOGGED IN = $isLoggedIn');
-      debugPrint('==============================');
-
-      _controller.forward();
-
-      // Request runtime permissions once, before the WebView loads.
-      await Permission.camera.request();
+      // Request permissions
       await Permission.location.request();
 
-      // Minimum splash duration, then navigate to RestaurantSelectionScreen.
+      // Show splash for ~2 seconds then navigate to Home
       final elapsed = DateTime.now().difference(_startTime);
-      final remaining = const Duration(seconds: 3) - elapsed;
+      final remaining = const Duration(seconds: 2) - elapsed;
       if (remaining > Duration.zero) {
         await Future.delayed(remaining);
       }
@@ -64,12 +160,16 @@ class _SplashScreenState extends State<SplashScreen>
     });
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Load the logo before the first frame so it does not pop in.
+    precacheImage(const AssetImage(_logoAsset), context);
+  }
+
   void _goToNextScreen() {
     if (!mounted || _navigated) return;
-
     _navigated = true;
-
-    debugPrint('GO TO RESTAURANT SELECTION');
 
     Navigator.pushReplacement(
       context,
@@ -81,96 +181,63 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   void dispose() {
-    debugPrint('SPLASH DISPOSE');
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final double maxHeight = constraints.maxHeight;
-            final double maxWidth = constraints.maxWidth;
-
-            return Stack(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      // White time / signal / battery icons on the orange background
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light, // Android
+        statusBarBrightness: Brightness.dark, // iOS
+      ),
+      child: Scaffold(
+        backgroundColor: AppTheme.primary,
+        body: SafeArea(
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Center(
-                  child: FadeTransition(
-                    opacity: _fadeAnimation,
-                    child: ScaleTransition(
-                      scale: _scaleAnimation,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Image.asset(
-                            'assets/images/logo.webp',
-                            height: (maxHeight * 0.32).clamp(120.0, 280.0),
-                            width: (maxWidth * 0.72).clamp(180.0, 400.0),
-                            fit: BoxFit.contain,
+                FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: ScaleTransition(
+                    scale: _scaleAnimation,
+                    child: Container(
+                      width: 180,
+                      height: 180,
+                      // Room for the logo, so its square corners are not
+                      // cut by the circle.
+                      padding: const EdgeInsets.all(28),
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(0x33000000),
+                            blurRadius: 24,
+                            offset: Offset(0, 8),
                           ),
                         ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(18),
+                        child: Image.asset(
+                          _logoAsset,
+                          // contain = whole logo visible, nothing cropped
+                          fit: BoxFit.contain,
+                        ),
                       ),
                     ),
                   ),
                 ),
-                Positioned(
-                  bottom: (maxHeight * 0.06).clamp(16.0, 60.0),
-                  left: 0,
-                  right: 0,
-                  child: FadeTransition(
-                    opacity: _fadeAnimation,
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            _buildDot(0),
-                            const SizedBox(width: 8),
-                            _buildDot(200),
-                            const SizedBox(width: 8),
-                            _buildDot(400),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Powered by Myteknoland',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
               ],
-            );
-          },
+            ),
+          ),
         ),
       ),
-    );
-  }
-
-  Widget _buildDot(int delayMs) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.3, end: 1.0),
-      duration: const Duration(milliseconds: 600),
-      curve: Curves.easeInOut,
-      builder: (context, value, child) {
-        return Container(
-          width: 9,
-          height: 9,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: const Color(0xFF80CC00).withOpacity(value),
-          ),
-        );
-      },
     );
   }
 }

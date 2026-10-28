@@ -1,4 +1,4 @@
-package com.example.nutricafe
+package com.example.nexdine
 
 import io.flutter.embedding.android.FlutterActivity
 
